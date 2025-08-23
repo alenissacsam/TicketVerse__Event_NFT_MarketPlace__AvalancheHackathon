@@ -5,90 +5,15 @@ import {IERC721, IERC165} from "@openzeppelin/contracts/token/ERC721/IERC721.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {UserVerification} from "./UserVerification.sol";
+import "./MarketPlaceStructAndVariables.sol";
 
 /**
- * @title TicketMarketplace - CORRECTED DEPOSIT SYSTEM
+ * @title TicketMarketplace 
  * @author alenissacsam (Enhanced by AI)
  * @dev NFT mint payments count as deposits, users can withdraw up to total deposits
  */
 contract TicketMarketplace is ReentrancyGuard, Ownable {
-    /*//////////////////////////////////////////////////////////////
-                                ERRORS
-    //////////////////////////////////////////////////////////////*/
-    error Marketplace__ItemNotListed(address tokenContract, uint256 tokenId);
-    error Marketplace__InsufficientDeposits(
-        uint256 required,
-        uint256 available
-    );
-    error Marketplace__CannotBuyOwnItem();
-    error Marketplace__PaymentFailed();
-    error Marketplace__NotAuthorized();
-    error Marketplace__InvalidTime();
-    error Marketplace__AuctionEnded();
-    error Marketplace__AuctionActive();
-    error Marketplace__BidTooLow();
-    error Marketplace__PriceIncreaseTooHigh();
-    error Marketplace__ResaleCooldownActive();
-    error Marketplace__EventNotCompleted();
-    error Marketplace__EventNotCancelled();
-    error Marketplace__ContractPaused();
-    error Marketplace__RoyaltyPaymentFailed();
-    error Marketplace__NoDepositsForEvent();
-    error Marketplace__InsufficientWithdrawalBalance();
-    error Marketplace__NotEventContract();
-
-    /*//////////////////////////////////////////////////////////////
-                            ENUMS & STRUCTS
-    //////////////////////////////////////////////////////////////*/
-    enum SaleType {
-        FIXED_PRICE,
-        AUCTION
-    }
-
-    enum AuctionStatus {
-        ACTIVE,
-        ENDED,
-        CANCELLED
-    }
-
-    struct Listing {
-        address seller;
-        address tokenContract;
-        uint256 tokenId;
-        uint256 price;
-        SaleType saleType;
-        bool active;
-        uint256 listedAt;
-    }
-
-    struct Auction {
-        uint256 startTime;
-        uint256 endTime;
-        uint256 reservePrice;
-        uint256 minBidIncrement;
-        address highestBidder;
-        uint256 highestBid;
-        AuctionStatus status;
-        uint256 extensionCount;
-        mapping(address => uint256) bids;
-        address[] bidders;
-    }
-
-    struct UserBalance {
-        uint256 totalDeposited; // Total amount user has deposited (including mint payments)
-        uint256 availableBalance; // Current available balance to spend/withdraw
-        uint256 lockedBalance; // Balance locked in active listings/bids
-        uint256 totalWithdrawn; // Total amount withdrawn (to enforce limits)
-        uint256 totalProfits; // Lifetime profits earned from sales
-    }
-
-    struct EventInfo {
-        bool eventEnded; // Whether event has ended
-        bool emergencyRefund; // Whether emergency refunds are enabled
-        uint256 totalDeposited; // Total amount deposited for this event
-        mapping(address => uint256) userOriginalDeposits; // Original deposits per user for emergency refunds
-    }
-
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -123,6 +48,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     uint256 public platformFeePercent = 250; // 2.5%
     address public immutable PLATFORM_ADDRESS;
     address public immutable I_USER_VERFIER_ADDRESS;
+
+    //Verifications
+
+    UserVerification public immutable userVerification;
 
     // Emergency controls
     bool public paused;
@@ -218,6 +147,14 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         _;
     }
 
+    modifier onlyVerifiedUser() {
+        require(
+            userVerification.isVerifiedAndActive(msg.sender),
+            "Marketplace: User not verified or is inactive"
+        );
+        _;
+    }
+
     modifier onlyAuthorizedEventContract() {
         if (!authorizedEventContracts[msg.sender])
             revert Marketplace__NotEventContract();
@@ -236,7 +173,9 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         validAddress(_platformAddress)
         validAddress(_userVerfierAddress)
     {
-        require(_platformFeePercent <= 1000, "Fee too high"); // Max 10% (1000 basis points)
+        if (_platformFeePercent > 1000)
+            revert Marketplace__InvalidFeePercentage(_platformFeePercent, 1000);
+        userVerification = UserVerification(_userVerfierAddress);
         I_USER_VERFIER_ADDRESS = _userVerfierAddress;
         PLATFORM_ADDRESS = _platformAddress;
         platformFeePercent = _platformFeePercent;
@@ -248,20 +187,20 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
 
     /**
      * @dev Users directly deposit funds for a specific event
+     * Only verified users can deposit funds
      */
     function depositForEvent(
         address eventContract
-    ) external payable nonReentrant notPaused {
-        require(msg.value > 0, "Must deposit some amount");
-        require(
-            !eventInfo[eventContract].emergencyRefund,
-            "Emergency refund active"
-        );
+    ) external payable nonReentrant notPaused onlyVerifiedUser {
+        if (msg.value == 0) revert Marketplace__InsufficientDeposits(1, 0);
+        if (eventInfo[eventContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundActive();
 
         _registerDeposit(msg.sender, eventContract, msg.value, "direct");
     }
 
     /**
+     * Only verified user can register primary sale
      * @dev Called by an authorized EventTicket contract during a primary sale (mint).
      * It receives the full mint price, credits the organizer and platform for deferred payment,
      * and registers the full amount as a deposit for the minting user.
@@ -323,24 +262,18 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     /**
      * @dev Withdraw available funds (up to maximum of what user originally deposited)
      */
+
     function withdrawFunds(
         address eventContract,
         uint256 amount
-    ) external nonReentrant {
+    ) external nonReentrant onlyVerifiedUser {
         UserBalance storage balance = userBalances[msg.sender][eventContract];
 
-        // Check if user has enough available balance
-        require(
-            balance.availableBalance >= amount,
-            "Insufficient available balance"
-        );
+        if (balance.availableBalance < amount)
+            revert Marketplace__InsufficientWithdrawalBalance();
 
-        // Cannot withdraw during emergency refund period
-        require(
-            !eventInfo[eventContract].emergencyRefund,
-            "Use emergency refund instead"
-        );
-
+        if (eventInfo[eventContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundActive();
         balance.availableBalance -= amount;
         balance.totalWithdrawn += amount;
 
@@ -372,12 +305,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address tokenContract,
         uint256 tokenId,
         uint256 price
-    ) external notPaused {
-        require(price > 0, "Price must be greater than 0");
-        require(
-            authorizedEventContracts[tokenContract],
-            "Event contract not authorized"
-        );
+    ) external notPaused onlyVerifiedUser {
+        if (price == 0) revert Marketplace__PriceMustBeGreaterThanZero();
+        if (!authorizedEventContracts[tokenContract])
+            revert Marketplace__EventContractNotAuthorized();
 
         _validateListing(tokenContract, tokenId);
         bytes32 listingId = getListingId(tokenContract, tokenId);
@@ -413,26 +344,16 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         uint256 reservePrice,
         uint256 duration,
         uint256 minBidIncrement
-    ) external notPaused {
-        require(startingPrice > 0, "Starting price must be greater than 0");
-        require(
-            minBidIncrement > 0,
-            "Min bid increment must be greater than 0"
-        );
-        require(
-            reservePrice >= startingPrice,
-            "Reserve must be >= starting price"
-        );
-        require(
-            duration >= MIN_AUCTION_DURATION &&
-                duration <= MAX_AUCTION_DURATION,
-            "Invalid duration" // Use Marketplace__InvalidDuration() error
-        );
-        require(
-            authorizedEventContracts[tokenContract],
-            "Event contract not authorized"
-        );
-
+    ) external notPaused onlyVerifiedUser {
+        if (startingPrice == 0)
+            revert Marketplace__PriceMustBeGreaterThanZero();
+        if (minBidIncrement == 0) revert Marketplace__InvalidBidIncrement();
+        if (reservePrice < startingPrice)
+            revert Marketplace__ReservePriceTooLow();
+        if (duration < MIN_AUCTION_DURATION || duration > MAX_AUCTION_DURATION)
+            revert Marketplace__InvalidDuration();
+        if (!authorizedEventContracts[tokenContract])
+            revert Marketplace__EventContractNotAuthorized();
         _validateListing(tokenContract, tokenId);
         bytes32 listingId = getListingId(tokenContract, tokenId);
 
@@ -484,29 +405,27 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     function buyItemWithDeposits(
         address tokenContract,
         uint256 tokenId
-    ) external nonReentrant notPaused {
+    ) external nonReentrant notPaused onlyVerifiedUser {
         bytes32 listingId = getListingId(tokenContract, tokenId);
         Listing storage listing = listings[listingId];
 
-        require(listing.active, "Item not listed");
-        require(
-            listing.saleType == SaleType.FIXED_PRICE,
-            "Not a fixed price listing"
-        );
-        require(msg.sender != listing.seller, "Cannot buy own item");
-        require(
-            !eventInfo[tokenContract].emergencyRefund,
-            "Emergency refund active"
-        );
+        if (!listing.active)
+            revert Marketplace__ItemNotListed(tokenContract, tokenId);
+        if (listing.saleType != SaleType.FIXED_PRICE)
+            revert Marketplace__NotFixedPrice();
+        if (msg.sender == listing.seller)
+            revert Marketplace__CannotBuyOwnItem();
+        if (eventInfo[tokenContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundActive();
 
         UserBalance storage buyerBalance = userBalances[msg.sender][
             tokenContract
         ];
-        require(
-            buyerBalance.availableBalance >= listing.price,
-            "Insufficient deposited funds"
-        );
-
+        if (buyerBalance.availableBalance < listing.price)
+            revert Marketplace__InsufficientDeposits(
+                listing.price,
+                buyerBalance.availableBalance
+            );
         // Execute the purchase using internal balances
         buyerBalance.availableBalance -= listing.price;
         _distributeSaleProceeds(
@@ -542,35 +461,37 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address tokenContract,
         uint256 tokenId,
         uint256 bidAmount
-    ) external nonReentrant notPaused {
+    ) external nonReentrant notPaused onlyVerifiedUser {
         bytes32 listingId = getListingId(tokenContract, tokenId);
         Listing storage listing = listings[listingId];
 
-        require(listing.active, "Item not listed");
-        require(listing.saleType == SaleType.AUCTION, "Not an auction");
-        require(msg.sender != listing.seller, "Cannot bid on own item");
-        require(
-            !eventInfo[tokenContract].emergencyRefund,
-            "Emergency refund active"
-        );
+        if (!listing.active)
+            revert Marketplace__ItemNotListed(tokenContract, tokenId);
+        if (listing.saleType != SaleType.AUCTION)
+            revert Marketplace__NotAuction();
+        if (msg.sender == listing.seller)
+            revert Marketplace__CannotBuyOwnItem();
+        if (eventInfo[tokenContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundActive();
 
         Auction storage auction = auctions[listingId];
-        require(block.timestamp < auction.endTime, "Auction ended");
-        require(auction.status == AuctionStatus.ACTIVE, "Auction not active");
-
+        if (block.timestamp >= auction.endTime)
+            revert Marketplace__AuctionEnded();
+        if (auction.status != AuctionStatus.ACTIVE)
+            revert Marketplace__AuctionNotActive();
         uint256 minBid = auction.highestBid + auction.minBidIncrement;
         if (auction.highestBid == 0) {
             minBid = listing.price;
         }
-        require(bidAmount >= minBid, "Bid too low");
-
+        if (bidAmount < minBid) revert Marketplace__BidTooLow();
         UserBalance storage bidderBalance = userBalances[msg.sender][
             tokenContract
         ];
-        require(
-            bidderBalance.availableBalance >= bidAmount,
-            "Insufficient deposited funds"
-        );
+        if (bidderBalance.availableBalance < bidAmount)
+            revert Marketplace__InsufficientDeposits(
+                bidAmount,
+                bidderBalance.availableBalance
+            );
 
         // Handle previous bid refund
         uint256 userPreviousBid = auction.bids[msg.sender];
@@ -632,10 +553,12 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         Listing storage listing = listings[listingId];
         Auction storage auction = auctions[listingId];
 
-        require(listing.active, "Auction not active");
-        require(auction.status == AuctionStatus.ACTIVE, "Auction not active");
-        require(block.timestamp >= auction.endTime, "Auction still running");
-
+        if (!listing.active)
+            revert Marketplace__ItemNotListed(tokenContract, tokenId);
+        if (auction.status != AuctionStatus.ACTIVE)
+            revert Marketplace__AuctionNotActive();
+        if (block.timestamp < auction.endTime)
+            revert Marketplace__AuctionActive();
         listing.active = false;
         auction.status = AuctionStatus.ENDED;
 
@@ -703,12 +626,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     /**
      * @dev Mark event as ended and enable profit collection
      */
+
     function markEventEnded(address eventContract) external onlyOwner {
-        require(!eventInfo[eventContract].eventEnded, "Event already ended");
-        require(
-            !_getEventCancellationStatus(eventContract),
-            "Event was cancelled"
-        );
+        if (eventInfo[eventContract].eventEnded) revert Marketplace__EventAlreadyEnded();
+        if (_getEventCancellationStatus(eventContract)) revert Marketplace__EventNotCancelled();
 
         eventInfo[eventContract].eventEnded = true;
 
@@ -718,16 +639,15 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     /**
      * @dev Collect profits after event ends (locked balances become available)
      */
-    function collectProfits(address eventContract) external nonReentrant {
-        require(eventInfo[eventContract].eventEnded, "Event not ended yet");
-        require(
-            !eventInfo[eventContract].emergencyRefund,
-            "Emergency refund active"
-        );
+
+    function collectProfits(
+        address eventContract
+    ) external nonReentrant onlyVerifiedUser {
+        if (!eventInfo[eventContract].eventEnded) revert Marketplace__EventNotEnded();
+        if (eventInfo[eventContract].emergencyRefund) revert Marketplace__EmergencyRefundActive();
 
         UserBalance storage balance = userBalances[msg.sender][eventContract];
-        require(balance.lockedBalance > 0, "No profits to collect");
-
+        if (balance.lockedBalance == 0) revert Marketplace__NoProfitsToCollect();
         uint256 lockedAmount = balance.lockedBalance;
         balance.lockedBalance = 0;
 
@@ -746,13 +666,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     /**
      * @dev Enable emergency refunds for cancelled event
      */
-    function enableEmergencyRefund(address eventContract) external onlyOwner {
-        require(
-            _getEventCancellationStatus(eventContract),
-            "Event not cancelled"
-        );
-        require(!eventInfo[eventContract].emergencyRefund, "Already enabled");
 
+    function enableEmergencyRefund(address eventContract) external onlyOwner {
+        if (!_getEventCancellationStatus(eventContract)) revert Marketplace__EventNotCancelled();
+        if (eventInfo[eventContract].emergencyRefund) revert Marketplace__EmergencyRefundActive();
         eventInfo[eventContract].emergencyRefund = true;
 
         emit EmergencyRefundEnabled(eventContract);
@@ -762,10 +679,7 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
      * @dev Claim emergency refund (full original deposit, no fees)
      */
     function claimEmergencyRefund(address eventContract) external nonReentrant {
-        require(
-            eventInfo[eventContract].emergencyRefund,
-            "Emergency refund not enabled"
-        );
+        if (!eventInfo[eventContract].emergencyRefund) revert Marketplace__EmergencyRefundNotEnabled();
 
         EventInfo storage info = eventInfo[eventContract];
         UserBalance storage balance = userBalances[msg.sender][eventContract];
@@ -773,7 +687,8 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         // Refund original deposits plus any locked profits (from sales/organizer fees)
         uint256 refundAmount = info.userOriginalDeposits[msg.sender] +
             balance.lockedBalance;
-        require(refundAmount > 0, "No deposits to refund");
+        if (refundAmount == 0) revert Marketplace__NoDepositsToRefund();
+
 
         // Clear user's deposits and balance for this event
         info.userOriginalDeposits[msg.sender] = 0;
@@ -792,9 +707,9 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address eventContract,
         address payable recipient
     ) external nonReentrant {
-        require(eventInfo[eventContract].eventEnded, "Event not ended yet");
+        if (!eventInfo[eventContract].eventEnded) revert Marketplace__EventNotEnded();
         uint256 amount = royaltiesPayable[eventContract][recipient];
-        require(amount > 0, "No royalties to withdraw");
+        if (amount == 0) revert Marketplace__NoRoyaltiesToWithdraw();
 
         royaltiesPayable[eventContract][recipient] = 0;
         _safeTransfer(recipient, amount);
@@ -806,14 +721,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
      * @dev Allows the platform to withdraw its fees for an event.
      */
     function withdrawPlatformFees(address eventContract) external nonReentrant {
-        require(
-            msg.sender == PLATFORM_ADDRESS || msg.sender == owner(),
-            "Not authorized"
-        );
-        require(eventInfo[eventContract].eventEnded, "Event not ended yet");
-
+        if (msg.sender != PLATFORM_ADDRESS && msg.sender != owner()) revert Marketplace__NotAuthorized();
+        if (!eventInfo[eventContract].eventEnded) revert Marketplace__EventNotEnded();
         uint256 amount = platformFeesPayable[eventContract];
-        require(amount > 0, "No fees to withdraw");
+        if (amount == 0) revert Marketplace__NoPlatformFeesToWithdraw();
 
         platformFeesPayable[eventContract] = 0;
         _safeTransfer(payable(PLATFORM_ADDRESS), amount);
@@ -863,17 +774,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address tokenContract,
         uint256 tokenId
     ) internal view {
-        require(
-            IERC721(tokenContract).ownerOf(tokenId) == msg.sender,
-            "Not token owner"
-        );
-        require(
-            IERC721(tokenContract).isApprovedForAll(
-                msg.sender,
-                address(this)
-            ) || IERC721(tokenContract).getApproved(tokenId) == address(this),
-            "Not approved"
-        );
+        if (IERC721(tokenContract).ownerOf(tokenId) != msg.sender) revert Marketplace__NotTokenOwner();
+        if (!IERC721(tokenContract).isApprovedForAll(msg.sender, address(this)) &&
+            IERC721(tokenContract).getApproved(tokenId) != address(this)
+        ) revert Marketplace__NotApproved();
     }
 
     function _validatePriceIncrease(
@@ -886,26 +790,21 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         if (lastPrice > 0) {
             uint256 maxAllowedPrice = lastPrice +
                 ((lastPrice * PRICE_INCREASE_LIMIT) / BASIS_POINTS);
-            require(newPrice <= maxAllowedPrice, "Price increase too high");
+            if (newPrice > maxAllowedPrice) revert Marketplace__PriceIncreaseTooHigh();
         } else {
             uint256 mintPrice = _getMintPrice(tokenContract);
             if (mintPrice > 0) {
                 uint256 maxAllowedPrice = mintPrice +
                     ((mintPrice * PRICE_INCREASE_LIMIT) / BASIS_POINTS);
-                require(
-                    newPrice <= maxAllowedPrice,
-                    "Price increase too high from mint"
-                );
+                if (newPrice > maxAllowedPrice) revert Marketplace__PriceIncreaseTooHigh();
             }
         }
     }
 
     function _checkResaleCooldown(bytes32 listingId) internal view {
         uint256 lastSale = lastSaleTime[listingId];
-        require(
-            lastSale == 0 || block.timestamp >= lastSale + RESALE_COOLDOWN,
-            "Resale cooldown active"
-        );
+        if (lastSale != 0 && block.timestamp < lastSale + RESALE_COOLDOWN) revert Marketplace__ResaleCooldownActive();
+
     }
 
     function _refundAllBidders(
@@ -1060,7 +959,7 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     //////////////////////////////////////////////////////////////*/
 
     function updatePlatformFee(uint256 newFeePercent) external onlyOwner {
-        require(newFeePercent <= 1000, "Fee too high");
+        if (newFeePercent > 1000) revert Marketplace__InvalidFeePercentage(newFeePercent, 1000);
         platformFeePercent = newFeePercent;
     }
 

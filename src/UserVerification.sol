@@ -5,7 +5,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
- * @title UserVerification - FULLY CORRECTED VERSION
+ * @title UserVerification 
  * @author alenissacsam (Enhanced by AI)
  * @dev Enhanced user verification with all logic errors fixed
  */
@@ -127,7 +127,9 @@ contract UserVerification is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-    constructor() Ownable(msg.sender) {}
+    constructor() Ownable(msg.sender) {
+        _verifyUserWithLevel(msg.sender, "", VerificationLevel.Basic);
+    }
 
     /*//////////////////////////////////////////////////////////////
                             VERIFICATION FUNCTIONS

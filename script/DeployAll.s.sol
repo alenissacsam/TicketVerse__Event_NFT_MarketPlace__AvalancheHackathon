@@ -10,7 +10,6 @@ import {Script} from "forge-std/Script.sol";
 contract DeployAll is Script {
     address _platformAddress = msg.sender;
     uint256 _platformFeePercent = 500;
-    uint256 _maxAuctionDuration = 30 days;
 
     function run() external returns (address, address, address) {
         DeployUserVerification deployUserVerification = new DeployUserVerification();
@@ -26,7 +25,6 @@ contract DeployAll is Script {
         address ticketMarketplace = deployTicketMarketPlace.run(
             _platformAddress,
             _platformFeePercent,
-            _maxAuctionDuration,
             userVerification
         );
 
