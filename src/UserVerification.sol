@@ -365,7 +365,7 @@ contract UserVerification is Ownable {
     }
 
     function getUserStatus(address user) external view returns (
-        bool isVerified,
+        bool _isVerified,
         VerificationLevel level,
         uint256 verifiedAt,
         uint256 expiresAt,
@@ -373,7 +373,7 @@ contract UserVerification is Ownable {
         uint256 suspendedUntil,
         SuspensionReason suspendedReason
     ) {
-        isVerified = _verifiedUsers.contains(user);
+        _isVerified = _verifiedUsers.contains(user);
         level = verificationLevel[user];
         verifiedAt = verificationTime[user];
         expiresAt = verificationExpiry[user];
@@ -459,11 +459,11 @@ contract UserVerification is Ownable {
         
         if (!onlyActive) {
             // Simple case: return all users in range
-            address[] memory result = new address[](end - offset);
-            for (uint256 i = 0; i < result.length; i++) {
-                result[i] = _verifiedUsers.at(offset + i);
+            address[] memory _result = new address[](end - offset);
+            for (uint256 i = 0; i < _result.length; i++) {
+                _result[i] = _verifiedUsers.at(offset + i);
             }
-            return result;
+            return _result;
         }
 
         // Complex case: filter active users

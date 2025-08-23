@@ -368,7 +368,7 @@ contract EventFactory is Ownable {
     function getOrganizerStats(address organizer) external view returns (
         uint256 totalEvents,
         uint256 totalTicketsSold,
-        uint256 totalRevenue,
+        uint256 _totalRevenue,
         uint256 successfulEvents,
         uint256 averageAttendance
     ) {
@@ -378,7 +378,7 @@ contract EventFactory is Ownable {
         for (uint256 i = 0; i < events.length; i++) {
             EventMetrics memory metrics = eventMetrics[events[i]];
             totalTicketsSold += metrics.totalTicketsSold;
-            totalRevenue += metrics.totalRevenue;
+            _totalRevenue += metrics.totalRevenue;
             if (metrics.successful) {
                 successfulEvents++;
             }
@@ -391,7 +391,7 @@ contract EventFactory is Ownable {
         address[] memory events,
         uint256 totalEvents,
         uint256 totalAttendees,
-        uint256 totalRevenue
+        uint256 _totalRevenue
     ) {
         events = eventSeries[seriesName];
         totalEvents = events.length;
@@ -399,7 +399,7 @@ contract EventFactory is Ownable {
         for (uint256 i = 0; i < events.length; i++) {
             EventMetrics memory metrics = eventMetrics[events[i]];
             totalAttendees += metrics.totalTicketsSold;
-            totalRevenue += metrics.totalRevenue;
+            _totalRevenue += metrics.totalRevenue;
         }
     }
 
