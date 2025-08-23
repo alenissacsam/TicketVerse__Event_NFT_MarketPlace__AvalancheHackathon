@@ -9,11 +9,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * @dev Factory with all logic errors fixed and improved functionality
  */
 contract EventFactory is Ownable {
-
     /*//////////////////////////////////////////////////////////////
                                 STRUCTS
     //////////////////////////////////////////////////////////////*/
-    
+
     struct VIPConfig {
         uint256 totalVIPSeats;
         uint256 vipSeatStart;
@@ -22,7 +21,7 @@ contract EventFactory is Ownable {
         uint256 vipPriceMultiplier;
         bool vipEnabled;
     }
-    
+
     struct EventTemplate {
         string name;
         VIPConfig defaultVipConfig;
@@ -120,14 +119,17 @@ contract EventFactory is Ownable {
         address indexed creator
     );
 
-    event TemplateUpdated(
-        uint256 indexed templateId,
-        bool isActive
-    );
+    event TemplateUpdated(uint256 indexed templateId, bool isActive);
 
     event OrganizerAuthorized(address indexed organizer, bool authorized);
-    event EventSeriesCreated(string indexed seriesName, address indexed organizer);
-    event EventMetricsUpdated(address indexed eventContract, EventMetrics metrics);
+    event EventSeriesCreated(
+        string indexed seriesName,
+        address indexed organizer
+    );
+    event EventMetricsUpdated(
+        address indexed eventContract,
+        EventMetrics metrics
+    );
     event ConfigurationUpdated(string parameter, uint256 newValue);
 
     /*//////////////////////////////////////////////////////////////
@@ -159,7 +161,9 @@ contract EventFactory is Ownable {
         address _platformAddress,
         address _userVerfierAddress
     ) Ownable(msg.sender) {
-        if (_platformAddress == address(0) || _userVerfierAddress == address(0)) {
+        if (
+            _platformAddress == address(0) || _userVerfierAddress == address(0)
+        ) {
             revert EventFactory__ZeroAddressNotAllowed();
         }
 
@@ -178,7 +182,13 @@ contract EventFactory is Ownable {
      */
     function createEvent(
         CreateEventParams calldata params
-    ) external payable onlyAuthorizedOrganizer validTemplate(params.templateId) returns (address) {
+    )
+        external
+        payable
+        onlyAuthorizedOrganizer
+        validTemplate(params.templateId)
+        returns (address)
+    {
         // Check creation fee
         if (msg.value < eventCreationFee) {
             revert EventFactory__InsufficientCreationFee();
@@ -186,10 +196,10 @@ contract EventFactory is Ownable {
 
         // Enhanced validation
         _validateEventParams(params);
-        
+
         // FIXED: Apply template with corrected field mapping
         CreateEventParams memory finalParams = _applyTemplate(params);
-        
+
         // Check series limits
         if (bytes(finalParams.seriesName).length > 0) {
             if (eventSeries[finalParams.seriesName].length >= maxSeriesEvents) {
@@ -254,11 +264,16 @@ contract EventFactory is Ownable {
         if (defaultMaxSupply == 0 || defaultDuration == 0 || basePrice == 0) {
             revert EventFactory__InvalidTemplateConfiguration();
         }
-        
+
         if (defaultVipConfig.vipEnabled) {
-            if (defaultVipConfig.vipSeatEnd >= defaultMaxSupply ||
+            if (
+                defaultVipConfig.vipSeatEnd >= defaultMaxSupply ||
                 defaultVipConfig.vipSeatStart > defaultVipConfig.vipSeatEnd ||
-                defaultVipConfig.totalVIPSeats != (defaultVipConfig.vipSeatEnd - defaultVipConfig.vipSeatStart + 1)) {
+                defaultVipConfig.totalVIPSeats !=
+                (defaultVipConfig.vipSeatEnd -
+                    defaultVipConfig.vipSeatStart +
+                    1)
+            ) {
                 revert EventFactory__InvalidVIPConfig();
             }
         }
@@ -277,13 +292,19 @@ contract EventFactory is Ownable {
         return templateId;
     }
 
-    function updateTemplateStatus(uint256 templateId, bool isActive) external onlyOwner {
+    function updateTemplateStatus(
+        uint256 templateId,
+        bool isActive
+    ) external onlyOwner {
         require(templateId < nextTemplateId, "Template does not exist");
         eventTemplates[templateId].isActive = isActive;
         emit TemplateUpdated(templateId, isActive);
     }
 
-    function setOrganizerAuthorization(address organizer, bool authorized) external onlyOwner {
+    function setOrganizerAuthorization(
+        address organizer,
+        bool authorized
+    ) external onlyOwner {
         authorizedOrganizers[organizer] = authorized;
         emit OrganizerAuthorized(organizer, authorized);
     }
@@ -309,12 +330,14 @@ contract EventFactory is Ownable {
     ) external {
         require(_isDeployedEvent(eventContract), "Not a deployed event");
         require(msg.sender == eventContract, "Only event contract can update");
-        
+
         EventMetrics storage metrics = eventMetrics[eventContract];
         metrics.totalTicketsSold = ticketsSold;
         metrics.totalRevenue = revenue;
         metrics.averagePrice = ticketsSold > 0 ? revenue / ticketsSold : 0;
-        metrics.refundRate = ticketsSold > 0 ? (refunds * 10000) / ticketsSold : 0; // Basis points
+        metrics.refundRate = ticketsSold > 0
+            ? (refunds * 10000) / ticketsSold
+            : 0; // Basis points
 
         emit EventMetricsUpdated(eventContract, metrics);
     }
@@ -322,7 +345,7 @@ contract EventFactory is Ownable {
     function markEventSuccessful(address eventContract) external {
         require(_isDeployedEvent(eventContract), "Not a deployed event");
         require(msg.sender == eventContract, "Only event contract can mark");
-        
+
         eventMetrics[eventContract].successful = true;
         totalRevenue += eventMetrics[eventContract].totalRevenue;
     }
@@ -337,14 +360,22 @@ contract EventFactory is Ownable {
         emit ConfigurationUpdated("eventCreationFee", newFee);
     }
 
-    function updatePlatformFeePercentage(uint256 newPercentage) external onlyOwner {
+    function updatePlatformFeePercentage(
+        uint256 newPercentage
+    ) external onlyOwner {
         require(newPercentage <= 1000, "Percentage too high"); // Max 10%
         platformCreationFeePercentage = newPercentage;
-        emit ConfigurationUpdated("platformCreationFeePercentage", newPercentage);
+        emit ConfigurationUpdated(
+            "platformCreationFeePercentage",
+            newPercentage
+        );
     }
 
     function updateDefaultLimits(uint256 _maxMintsPerUser) external onlyOwner {
-        require(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100, "Invalid limit");
+        require(
+            _maxMintsPerUser > 0 && _maxMintsPerUser <= 100,
+            "Invalid limit"
+        );
         defaultMaxMintsPerUser = _maxMintsPerUser;
         emit ConfigurationUpdated("defaultMaxMintsPerUser", _maxMintsPerUser);
     }
@@ -356,7 +387,10 @@ contract EventFactory is Ownable {
     }
 
     function updateMinEventSetupTime(uint256 _minTime) external onlyOwner {
-        require(_minTime >= 1 hours && _minTime <= 30 days, "Invalid setup time");
+        require(
+            _minTime >= 1 hours && _minTime <= 30 days,
+            "Invalid setup time"
+        );
         minEventSetupTime = _minTime;
         emit ConfigurationUpdated("minEventSetupTime", _minTime);
     }
@@ -365,16 +399,22 @@ contract EventFactory is Ownable {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getOrganizerStats(address organizer) external view returns (
-        uint256 totalEvents,
-        uint256 totalTicketsSold,
-        uint256 _totalRevenue,
-        uint256 successfulEvents,
-        uint256 averageAttendance
-    ) {
+    function getOrganizerStats(
+        address organizer
+    )
+        external
+        view
+        returns (
+            uint256 totalEvents,
+            uint256 totalTicketsSold,
+            uint256 _totalRevenue,
+            uint256 successfulEvents,
+            uint256 averageAttendance
+        )
+    {
         address[] memory events = _organizerEvents[organizer];
         totalEvents = events.length;
-        
+
         for (uint256 i = 0; i < events.length; i++) {
             EventMetrics memory metrics = eventMetrics[events[i]];
             totalTicketsSold += metrics.totalTicketsSold;
@@ -383,19 +423,27 @@ contract EventFactory is Ownable {
                 successfulEvents++;
             }
         }
-        
-        averageAttendance = totalEvents > 0 ? totalTicketsSold / totalEvents : 0;
+
+        averageAttendance = totalEvents > 0
+            ? totalTicketsSold / totalEvents
+            : 0;
     }
 
-    function getEventSeries(string memory seriesName) external view returns (
-        address[] memory events,
-        uint256 totalEvents,
-        uint256 totalAttendees,
-        uint256 _totalRevenue
-    ) {
+    function getEventSeries(
+        string memory seriesName
+    )
+        external
+        view
+        returns (
+            address[] memory events,
+            uint256 totalEvents,
+            uint256 totalAttendees,
+            uint256 _totalRevenue
+        )
+    {
         events = eventSeries[seriesName];
         totalEvents = events.length;
-        
+
         for (uint256 i = 0; i < events.length; i++) {
             EventMetrics memory metrics = eventMetrics[events[i]];
             totalAttendees += metrics.totalTicketsSold;
@@ -403,14 +451,16 @@ contract EventFactory is Ownable {
         }
     }
 
-    function getTemplate(uint256 templateId) external view returns (EventTemplate memory) {
+    function getTemplate(
+        uint256 templateId
+    ) external view returns (EventTemplate memory) {
         require(templateId < nextTemplateId, "Template does not exist");
         return eventTemplates[templateId];
     }
 
     function getActiveTemplates() external view returns (uint256[] memory) {
         uint256 activeCount = 0;
-        
+
         // Count active templates
         for (uint256 i = 1; i < nextTemplateId; i++) {
             if (eventTemplates[i].isActive) {
@@ -431,24 +481,30 @@ contract EventFactory is Ownable {
         return result;
     }
 
-    function getPlatformStats() external view returns (
-        uint256 totalEvents,
-        uint256 totalOrganizers,
-        uint256 platformRevenue,
-        uint256 successRate
-    ) {
+    function getPlatformStats()
+        external
+        view
+        returns (
+            uint256 totalEvents,
+            uint256 totalOrganizers,
+            uint256 platformRevenue,
+            uint256 successRate
+        )
+    {
         totalEvents = totalEventsCreated;
         totalOrganizers = _getUniqueOrganizerCount();
         platformRevenue = totalRevenue;
-        
+
         uint256 successfulCount = 0;
         for (uint256 i = 0; i < _deployedEvents.length; i++) {
             if (eventMetrics[_deployedEvents[i]].successful) {
                 successfulCount++;
             }
         }
-        
-        successRate = totalEvents > 0 ? (successfulCount * 10000) / totalEvents : 0; // Basis points
+
+        successRate = totalEvents > 0
+            ? (successfulCount * 10000) / totalEvents
+            : 0; // Basis points
     }
 
     function getDeployedEvents(
@@ -493,11 +549,15 @@ contract EventFactory is Ownable {
         return _deployedEvents.length;
     }
 
-    function getOrganizerEventCount(address organizer) external view returns (uint256) {
+    function getOrganizerEventCount(
+        address organizer
+    ) external view returns (uint256) {
         return _organizerEvents[organizer].length;
     }
 
-    function getAllOrganizerEvents(address organizer) external view returns (address[] memory) {
+    function getAllOrganizerEvents(
+        address organizer
+    ) external view returns (address[] memory) {
         return _organizerEvents[organizer];
     }
 
@@ -509,7 +569,9 @@ contract EventFactory is Ownable {
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function _validateEventParams(CreateEventParams calldata params) internal view {
+    function _validateEventParams(
+        CreateEventParams calldata params
+    ) internal view {
         // Enhanced timing validation
         if (params.eventStartTime <= block.timestamp + minEventSetupTime) {
             revert EventFactory__InvalidEventTime();
@@ -530,23 +592,32 @@ contract EventFactory is Ownable {
 
         // VIP configuration validation
         if (params.vipConfig.vipEnabled && params.vipConfig.totalVIPSeats > 0) {
-            if (params.vipConfig.vipSeatEnd < params.vipConfig.vipSeatStart ||
+            if (
+                params.vipConfig.vipSeatEnd < params.vipConfig.vipSeatStart ||
                 params.vipConfig.vipSeatEnd >= params.maxSupply ||
                 params.vipConfig.totalVIPSeats !=
-                (params.vipConfig.vipSeatEnd - params.vipConfig.vipSeatStart + 1)) {
+                (params.vipConfig.vipSeatEnd -
+                    params.vipConfig.vipSeatStart +
+                    1)
+            ) {
                 revert EventFactory__InvalidVIPConfig();
             }
         }
 
         // Mint limit validation
-        uint256 maxMints = params.maxMintsPerUser > 0 ? params.maxMintsPerUser : defaultMaxMintsPerUser;
+        uint256 maxMints = params.maxMintsPerUser > 0
+            ? params.maxMintsPerUser
+            : defaultMaxMintsPerUser;
         if (maxMints > params.maxSupply) {
             revert EventFactory__InvalidMintLimit();
         }
 
         // Whitelist sale timing validation
-        if (params.waitlistEnabled &&
-            block.timestamp + params.whitelistSaleDuration >= params.eventStartTime) {
+        if (
+            params.waitlistEnabled &&
+            block.timestamp + params.whitelistSaleDuration >=
+            params.eventStartTime
+        ) {
             revert EventFactory__InvalidEventTime();
         }
     }
@@ -554,8 +625,9 @@ contract EventFactory is Ownable {
     /**
      * @dev FIXED: Apply template with corrected field mapping
      */
-    function _applyTemplate(CreateEventParams calldata params)
-        internal view returns (CreateEventParams memory) {
+    function _applyTemplate(
+        CreateEventParams calldata params
+    ) internal view returns (CreateEventParams memory) {
         if (params.templateId == 0) {
             return params;
         }
@@ -574,10 +646,15 @@ contract EventFactory is Ownable {
         }
 
         if (finalParams.eventEndTime == 0) {
-            finalParams.eventEndTime = finalParams.eventStartTime + template.defaultDuration;
+            finalParams.eventEndTime =
+                finalParams.eventStartTime +
+                template.defaultDuration;
         }
 
-        if (!finalParams.vipConfig.vipEnabled && template.defaultVipConfig.vipEnabled) {
+        if (
+            !finalParams.vipConfig.vipEnabled &&
+            template.defaultVipConfig.vipEnabled
+        ) {
             finalParams.vipConfig = template.defaultVipConfig;
         }
 
@@ -587,10 +664,12 @@ contract EventFactory is Ownable {
     /**
      * @dev FIXED: Deploy event contract using bytecode
      */
-    function _deployEventContract(CreateEventParams memory params) internal returns (address) {
+    function _deployEventContract(
+        CreateEventParams memory params
+    ) internal returns (address) {
         // For this implementation, we'll use a placeholder deployment
         // In practice, you would deploy the actual EventTicket contract here
-        
+
         bytes memory bytecode = abi.encodePacked(
             type(MockEventTicket).creationCode,
             abi.encode(
@@ -611,8 +690,10 @@ contract EventFactory is Ownable {
             )
         );
 
-        bytes32 salt = keccak256(abi.encodePacked(msg.sender, params.name, block.timestamp));
-        
+        bytes32 salt = keccak256(
+            abi.encodePacked(msg.sender, params.name, block.timestamp)
+        );
+
         address newEvent;
         assembly {
             newEvent := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
@@ -625,17 +706,19 @@ contract EventFactory is Ownable {
     function _distributeCreationFees(uint256 amount) internal {
         uint256 platformFee = (amount * platformCreationFeePercentage) / 10000;
         uint256 remainder = amount - platformFee;
-        
+
         if (platformFee > 0) {
             payable(I_PLATFORM_ADDRESS).transfer(platformFee);
         }
-        
+
         if (remainder > 0) {
             payable(owner()).transfer(remainder);
         }
     }
 
-    function _isDeployedEvent(address eventContract) internal view returns (bool) {
+    function _isDeployedEvent(
+        address eventContract
+    ) internal view returns (bool) {
         for (uint256 i = 0; i < _deployedEvents.length; i++) {
             if (_deployedEvents[i] == eventContract) {
                 return true;
@@ -650,14 +733,14 @@ contract EventFactory is Ownable {
         for (uint256 i = 0; i < _deployedEvents.length; i++) {
             bool isNew = true;
             address organizer = _getEventOrganizer(_deployedEvents[i]);
-            
+
             for (uint256 j = 0; j < i; j++) {
                 if (_getEventOrganizer(_deployedEvents[j]) == organizer) {
                     isNew = false;
                     break;
                 }
             }
-            
+
             if (isNew) {
                 count++;
             }
@@ -665,16 +748,18 @@ contract EventFactory is Ownable {
         return count;
     }
 
-    function _getEventOrganizer(address eventContract) internal view returns (address) {
+    function _getEventOrganizer(
+        address eventContract
+    ) internal view returns (address) {
         // Try to get organizer from event contract
         (bool success, bytes memory data) = eventContract.staticcall(
             abi.encodeWithSignature("eventOrganizer()")
         );
-        
+
         if (success && data.length >= 32) {
             return abi.decode(data, (address));
         }
-        
+
         return address(0);
     }
 

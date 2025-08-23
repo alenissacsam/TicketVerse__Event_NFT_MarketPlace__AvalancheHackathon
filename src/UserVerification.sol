@@ -16,11 +16,11 @@ contract UserVerification is Ownable {
                                 ENUMS
     //////////////////////////////////////////////////////////////*/
     enum VerificationLevel {
-        None,    // 0 - Not verified
-        Basic,   // 1 - Basic verification
+        None, // 0 - Not verified
+        Basic, // 1 - Basic verification
         Premium, // 2 - Premium verification
-        VIP,     // 3 - VIP verification
-        Admin    // 4 - Admin level
+        VIP, // 3 - VIP verification
+        Admin // 4 - Admin level
     }
 
     enum SuspensionReason {
@@ -38,7 +38,10 @@ contract UserVerification is Ownable {
     error UserVerification__UserNotVerified(address user);
     error UserVerification__UserSuspended(address user);
     error UserVerification__VerificationExpired(address user);
-    error UserVerification__InsufficientLevel(address user, VerificationLevel required);
+    error UserVerification__InsufficientLevel(
+        address user,
+        VerificationLevel required
+    );
     error UserVerification__OffsetOutOfBounds();
     error UserVerification__InvalidBatchSize();
     error UserVerification__InvalidDuration();
@@ -77,11 +80,28 @@ contract UserVerification is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    event UserVerified(address indexed user, uint256 timestamp, VerificationLevel level, uint256 expiryTime);
-    event UserLevelUpgraded(address indexed user, VerificationLevel oldLevel, VerificationLevel newLevel);
-    event UserLevelDowngraded(address indexed user, VerificationLevel oldLevel, VerificationLevel newLevel);
+    event UserVerified(
+        address indexed user,
+        uint256 timestamp,
+        VerificationLevel level,
+        uint256 expiryTime
+    );
+    event UserLevelUpgraded(
+        address indexed user,
+        VerificationLevel oldLevel,
+        VerificationLevel newLevel
+    );
+    event UserLevelDowngraded(
+        address indexed user,
+        VerificationLevel oldLevel,
+        VerificationLevel newLevel
+    );
     event UserRevoked(address indexed user, uint256 timestamp);
-    event UserSuspended(address indexed user, uint256 endTime, SuspensionReason reason);
+    event UserSuspended(
+        address indexed user,
+        uint256 endTime,
+        SuspensionReason reason
+    );
     event UserUnsuspended(address indexed user, uint256 timestamp);
     event UserMetadataUpdated(address indexed user, string metadata);
     event VerificationExpired(address indexed user, uint256 timestamp);
@@ -165,9 +185,11 @@ contract UserVerification is Ownable {
 
         uint256 successCount = 0;
         for (uint256 i = 0; i < users.length; i++) {
-            if (levels[i] <= VerificationLevel.Admin &&
+            if (
+                levels[i] <= VerificationLevel.Admin &&
                 !_verifiedUsers.contains(users[i]) &&
-                !isSuspended[users[i]]) {
+                !isSuspended[users[i]]
+            ) {
                 _verifyUserWithLevel(users[i], "", levels[i]);
                 successCount++;
             }
@@ -187,7 +209,7 @@ contract UserVerification is Ownable {
     ) external onlyOwner {
         require(_verifiedUsers.contains(user), "User not verified");
         require(duration > 0, "Invalid suspension duration");
-        
+
         isSuspended[user] = true;
         suspensionEndTime[user] = block.timestamp + duration;
         suspensionReason[user] = reason;
@@ -198,7 +220,7 @@ contract UserVerification is Ownable {
 
     function unsuspendUser(address user) external onlyOwner {
         require(isSuspended[user], "User not suspended");
-        
+
         isSuspended[user] = false;
         suspensionEndTime[user] = 0;
         suspensionReason[user] = SuspensionReason.None;
@@ -216,7 +238,7 @@ contract UserVerification is Ownable {
     ) external onlyOwner validLevel(newLevel) notSuspended(user) {
         require(_verifiedUsers.contains(user), "User not verified");
         require(!_isVerificationExpired(user), "Verification expired");
-        
+
         VerificationLevel oldLevel = verificationLevel[user];
         require(newLevel > oldLevel, "Cannot downgrade with this function");
 
@@ -232,7 +254,7 @@ contract UserVerification is Ownable {
         VerificationLevel newLevel
     ) external onlyOwner validLevel(newLevel) {
         require(_verifiedUsers.contains(user), "User not verified");
-        
+
         VerificationLevel oldLevel = verificationLevel[user];
         require(newLevel < oldLevel, "Use upgrade function for higher levels");
 
@@ -252,16 +274,28 @@ contract UserVerification is Ownable {
         uint256 additionalDuration
     ) external onlyOwner notSuspended(user) {
         require(_verifiedUsers.contains(user), "User not verified");
-        
+
         uint256 currentExpiry = verificationExpiry[user];
         uint256 newExpiry;
-        
+
         if (_isVerificationExpired(user)) {
             // If expired, start from current time
-            newExpiry = block.timestamp + (additionalDuration > 0 ? additionalDuration : verificationDuration);
+            newExpiry =
+                block.timestamp +
+                (
+                    additionalDuration > 0
+                        ? additionalDuration
+                        : verificationDuration
+                );
         } else {
             // If not expired, extend from current expiry
-            newExpiry = currentExpiry + (additionalDuration > 0 ? additionalDuration : verificationDuration);
+            newExpiry =
+                currentExpiry +
+                (
+                    additionalDuration > 0
+                        ? additionalDuration
+                        : verificationDuration
+                );
         }
 
         verificationExpiry[user] = newExpiry;
@@ -274,7 +308,7 @@ contract UserVerification is Ownable {
         }
 
         VerificationLevel level = verificationLevel[user];
-        
+
         // FIXED: Proper level count management
         if (levelCounts[level] > 0) {
             levelCounts[level]--;
@@ -296,7 +330,7 @@ contract UserVerification is Ownable {
         string memory metadata
     ) external onlyOwner notSuspended(user) {
         require(_verifiedUsers.contains(user), "User not verified");
-        
+
         userMetadata[user] = metadata;
         emit UserMetadataUpdated(user, metadata);
     }
@@ -304,9 +338,14 @@ contract UserVerification is Ownable {
     /**
      * @dev FIXED: Automatic expiration with proper cleanup
      */
-    function expireOldVerifications(address[] calldata users) external onlyOwner {
+    function expireOldVerifications(
+        address[] calldata users
+    ) external onlyOwner {
         for (uint256 i = 0; i < users.length; i++) {
-            if (_verifiedUsers.contains(users[i]) && _isVerificationExpired(users[i])) {
+            if (
+                _verifiedUsers.contains(users[i]) &&
+                _isVerificationExpired(users[i])
+            ) {
                 _expireUser(users[i]);
             }
         }
@@ -317,7 +356,10 @@ contract UserVerification is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     function setVerificationDuration(uint256 _duration) external onlyOwner {
-        require(_duration >= 30 days && _duration <= 5 * 365 days, "Invalid duration");
+        require(
+            _duration >= 30 days && _duration <= 5 * 365 days,
+            "Invalid duration"
+        );
         verificationDuration = _duration;
         emit ConfigurationUpdated("verificationDuration", _duration);
     }
@@ -335,7 +377,10 @@ contract UserVerification is Ownable {
     }
 
     function setVerificationCooldown(uint256 _cooldown) external onlyOwner {
-        require(_cooldown >= 1 hours && _cooldown <= 7 days, "Invalid cooldown");
+        require(
+            _cooldown >= 1 hours && _cooldown <= 7 days,
+            "Invalid cooldown"
+        );
         verificationCooldown = _cooldown;
         emit ConfigurationUpdated("verificationCooldown", _cooldown);
     }
@@ -345,9 +390,10 @@ contract UserVerification is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     function isVerifiedAndActive(address user) external view returns (bool) {
-        return _verifiedUsers.contains(user) &&
-               !_isUserSuspended(user) &&
-               !_isVerificationExpired(user);
+        return
+            _verifiedUsers.contains(user) &&
+            !_isUserSuspended(user) &&
+            !_isVerificationExpired(user);
     }
 
     function isVerified(address user) external view returns (bool) {
@@ -358,21 +404,28 @@ contract UserVerification is Ownable {
         address user,
         VerificationLevel minLevel
     ) external view returns (bool) {
-        return _verifiedUsers.contains(user) &&
-               !_isUserSuspended(user) &&
-               !_isVerificationExpired(user) &&
-               verificationLevel[user] >= minLevel;
+        return
+            _verifiedUsers.contains(user) &&
+            !_isUserSuspended(user) &&
+            !_isVerificationExpired(user) &&
+            verificationLevel[user] >= minLevel;
     }
 
-    function getUserStatus(address user) external view returns (
-        bool _isVerified,
-        VerificationLevel level,
-        uint256 verifiedAt,
-        uint256 expiresAt,
-        bool suspended,
-        uint256 suspendedUntil,
-        SuspensionReason suspendedReason
-    ) {
+    function getUserStatus(
+        address user
+    )
+        external
+        view
+        returns (
+            bool _isVerified,
+            VerificationLevel level,
+            uint256 verifiedAt,
+            uint256 expiresAt,
+            bool suspended,
+            uint256 suspendedUntil,
+            SuspensionReason suspendedReason
+        )
+    {
         _isVerified = _verifiedUsers.contains(user);
         level = verificationLevel[user];
         verifiedAt = verificationTime[user];
@@ -385,13 +438,17 @@ contract UserVerification is Ownable {
     /**
      * @dev FIXED: Accurate verification statistics
      */
-    function getVerificationStats() external view returns (
-        uint256 totalVerified,
-        uint256 totalActive,
-        uint256 totalSuspended,
-        uint256 totalExpired,
-        uint256[5] memory levelDistribution
-    ) {
+    function getVerificationStats()
+        external
+        view
+        returns (
+            uint256 totalVerified,
+            uint256 totalActive,
+            uint256 totalSuspended,
+            uint256 totalExpired,
+            uint256[5] memory levelDistribution
+        )
+    {
         totalVerified = _verifiedUsers.length();
         totalSuspended = totalSuspensions;
         totalExpired = totalExpirations;
@@ -417,13 +474,16 @@ contract UserVerification is Ownable {
         bool onlyActive
     ) external view returns (address[] memory) {
         uint256 totalVerified = _verifiedUsers.length();
-        
+
         // First pass: count matching users
         uint256 count = 0;
         for (uint256 i = 0; i < totalVerified; i++) {
             address user = _verifiedUsers.at(i);
             if (verificationLevel[user] == level) {
-                if (!onlyActive || (!_isUserSuspended(user) && !_isVerificationExpired(user))) {
+                if (
+                    !onlyActive ||
+                    (!_isUserSuspended(user) && !_isVerificationExpired(user))
+                ) {
                     count++;
                 }
             }
@@ -435,7 +495,10 @@ contract UserVerification is Ownable {
         for (uint256 i = 0; i < totalVerified; i++) {
             address user = _verifiedUsers.at(i);
             if (verificationLevel[user] == level) {
-                if (!onlyActive || (!_isUserSuspended(user) && !_isVerificationExpired(user))) {
+                if (
+                    !onlyActive ||
+                    (!_isUserSuspended(user) && !_isVerificationExpired(user))
+                ) {
                     result[index] = user;
                     index++;
                 }
@@ -456,7 +519,7 @@ contract UserVerification is Ownable {
         }
 
         uint256 end = offset + limit > count ? count : offset + limit;
-        
+
         if (!onlyActive) {
             // Simple case: return all users in range
             address[] memory _result = new address[](end - offset);
@@ -469,7 +532,7 @@ contract UserVerification is Ownable {
         // Complex case: filter active users
         address[] memory temp = new address[](end - offset);
         uint256 resultCount = 0;
-        
+
         for (uint256 i = offset; i < end; i++) {
             address user = _verifiedUsers.at(i);
             if (!_isUserSuspended(user) && !_isVerificationExpired(user)) {
@@ -488,7 +551,9 @@ contract UserVerification is Ownable {
     }
 
     // Compatibility functions
-    function getUserLevel(address user) external view returns (VerificationLevel) {
+    function getUserLevel(
+        address user
+    ) external view returns (VerificationLevel) {
         return verificationLevel[user];
     }
 
@@ -496,7 +561,9 @@ contract UserVerification is Ownable {
         return verificationTime[user];
     }
 
-    function getUserMetadata(address user) external view returns (string memory) {
+    function getUserMetadata(
+        address user
+    ) external view returns (string memory) {
         return userMetadata[user];
     }
 
@@ -504,8 +571,13 @@ contract UserVerification is Ownable {
         return _verifiedUsers.length();
     }
 
-    function wasVerifiedBefore(address user, uint256 timestamp) external view returns (bool) {
-        return _verifiedUsers.contains(user) && verificationTime[user] <= timestamp;
+    function wasVerifiedBefore(
+        address user,
+        uint256 timestamp
+    ) external view returns (bool) {
+        return
+            _verifiedUsers.contains(user) &&
+            verificationTime[user] <= timestamp;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -521,7 +593,10 @@ contract UserVerification is Ownable {
         VerificationLevel level
     ) internal {
         // FIXED: Rate limiting with custom error instead of string revert
-        if (lastVerificationAttempt[user] + verificationCooldown > block.timestamp) {
+        if (
+            lastVerificationAttempt[user] + verificationCooldown >
+            block.timestamp
+        ) {
             if (verificationAttempts[user] >= maxVerificationAttempts) {
                 revert UserVerification__RateLimitExceeded(user);
             }
@@ -548,7 +623,12 @@ contract UserVerification is Ownable {
             emit UserMetadataUpdated(user, metadata);
         }
 
-        emit UserVerified(user, block.timestamp, level, verificationExpiry[user]);
+        emit UserVerified(
+            user,
+            block.timestamp,
+            level,
+            verificationExpiry[user]
+        );
     }
 
     /**
@@ -557,12 +637,12 @@ contract UserVerification is Ownable {
     function _expireUser(address user) internal {
         if (_verifiedUsers.remove(user)) {
             VerificationLevel level = verificationLevel[user];
-            
+
             // FIXED: Proper level count management
             if (levelCounts[level] > 0) {
                 levelCounts[level]--;
             }
-            
+
             totalExpirations++;
             emit VerificationExpired(user, block.timestamp);
             // Keep data for potential renewal
@@ -572,7 +652,10 @@ contract UserVerification is Ownable {
     /**
      * @dev FIXED: Atomic level count updates
      */
-    function _updateLevelCounts(VerificationLevel oldLevel, VerificationLevel newLevel) internal {
+    function _updateLevelCounts(
+        VerificationLevel oldLevel,
+        VerificationLevel newLevel
+    ) internal {
         if (levelCounts[oldLevel] > 0) {
             levelCounts[oldLevel]--;
         }

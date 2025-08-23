@@ -7,35 +7,35 @@ import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title TicketMarketplace - FULLY CORRECTED VERSION
+ * @title TicketMarketplace - CORRECTED DEPOSIT SYSTEM
  * @author alenissacsam (Enhanced by AI)
- * @dev Marketplace with all logic errors fixed and optimized gas usage
+ * @dev NFT mint payments count as deposits, users can withdraw up to total deposits
  */
 contract TicketMarketplace is ReentrancyGuard, Ownable {
-
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
     error Marketplace__ItemNotListed(address tokenContract, uint256 tokenId);
-    error Marketplace__InsufficientFunds(uint256 required, uint256 provided);
+    error Marketplace__InsufficientDeposits(
+        uint256 required,
+        uint256 available
+    );
     error Marketplace__CannotBuyOwnItem();
     error Marketplace__PaymentFailed();
     error Marketplace__NotAuthorized();
     error Marketplace__InvalidTime();
     error Marketplace__AuctionEnded();
     error Marketplace__AuctionActive();
-    error Marketplace__NoActiveBids();
     error Marketplace__BidTooLow();
     error Marketplace__PriceIncreaseTooHigh();
     error Marketplace__ResaleCooldownActive();
     error Marketplace__EventNotCompleted();
-    error Marketplace__FundsAlreadyReleased();
-    error Marketplace__InvalidAddress();
-    error Marketplace__InvalidFeePercentage();
-    error Marketplace__InvalidDuration();
-    error Marketplace__MaxExtensionsReached();
+    error Marketplace__EventNotCancelled();
     error Marketplace__ContractPaused();
-    error Marketplace__InsufficientContractBalance();
+    error Marketplace__RoyaltyPaymentFailed();
+    error Marketplace__NoDepositsForEvent();
+    error Marketplace__InsufficientWithdrawalBalance();
+    error Marketplace__NotEventContract();
 
     /*//////////////////////////////////////////////////////////////
                             ENUMS & STRUCTS
@@ -74,17 +74,19 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address[] bidders;
     }
 
-    struct EscrowInfo {
-        uint256 amount;
-        address seller;
-        address buyer;
-        bool released;
-        uint256 eventStartTime;
+    struct UserBalance {
+        uint256 totalDeposited; // Total amount user has deposited (including mint payments)
+        uint256 availableBalance; // Current available balance to spend/withdraw
+        uint256 lockedBalance; // Balance locked in active listings/bids
+        uint256 totalWithdrawn; // Total amount withdrawn (to enforce limits)
+        uint256 totalProfits; // Lifetime profits earned from sales
     }
 
-    struct PlatformConfig {
-        uint256 platformFeePercent;
-        uint256 maxAuctionDuration;
+    struct EventInfo {
+        bool eventEnded; // Whether event has ended
+        bool emergencyRefund; // Whether emergency refunds are enabled
+        uint256 totalDeposited; // Total amount deposited for this event
+        mapping(address => uint256) userOriginalDeposits; // Original deposits per user for emergency refunds
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -92,32 +94,58 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     //////////////////////////////////////////////////////////////*/
     mapping(bytes32 => Listing) public listings;
     mapping(bytes32 => Auction) public auctions;
-    mapping(bytes32 => EscrowInfo) public escrowedFunds;
     mapping(bytes32 => uint256) public lastSalePrice;
     mapping(bytes32 => uint256) public lastSaleTime;
+
+    // Deposit and balance tracking
+    mapping(address => mapping(address => UserBalance)) public userBalances; // user => eventContract => balance
+    mapping(address => EventInfo) public eventInfo;
     mapping(address => uint256) public tokenContractVolume;
     mapping(uint256 => uint256) public dailyVolume;
+
+    // Royalty and Fee tracking
+    // eventContract => royaltyRecipient => amountOwed
+    mapping(address => mapping(address => uint256)) public royaltiesPayable;
+    // eventContract => amountOwed
+    mapping(address => uint256) public platformFeesPayable;
+
+    // Authorized event contracts that can register mint payments
+    mapping(address => bool) public authorizedEventContracts;
 
     // Constants
     uint256 public constant PRICE_INCREASE_LIMIT = 2000; // 20% in basis points
     uint256 public constant RESALE_COOLDOWN = 1 hours;
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 public constant ESCROW_RELEASE_DELAY = 1 days;
     uint256 public constant MAX_AUCTION_EXTENSIONS = 5;
-    uint256 public constant MAX_PLATFORM_FEE = 1000; // 10% max
     uint256 public constant MIN_AUCTION_DURATION = 1 hours;
     uint256 public constant MAX_AUCTION_DURATION = 30 days;
 
-    PlatformConfig public config;
+    uint256 public platformFeePercent = 250; // 2.5%
     address public immutable PLATFORM_ADDRESS;
     address public immutable I_USER_VERFIER_ADDRESS;
-    
+
     // Emergency controls
     bool public paused;
-    
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
+    event FundsDeposited(
+        address indexed user,
+        address indexed eventContract,
+        uint256 amount,
+        string depositType
+    );
+    event FundsWithdrawn(
+        address indexed user,
+        address indexed eventContract,
+        uint256 amount
+    );
+    event PrimarySaleRegistered(
+        address indexed user,
+        address indexed eventContract,
+        uint256 amount
+    );
     event Listed(
         address indexed seller,
         address indexed tokenContract,
@@ -125,51 +153,57 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         uint256 price,
         SaleType saleType
     );
-
     event AuctionCreated(
         bytes32 indexed listingId,
         uint256 startTime,
         uint256 endTime,
         uint256 reservePrice
     );
-
     event BidPlaced(
         bytes32 indexed listingId,
         address indexed bidder,
         uint256 amount,
         uint256 timestamp
     );
-
     event AuctionSettled(
         bytes32 indexed listingId,
         address indexed winner,
         uint256 finalPrice
     );
-
+    event ItemSold(
+        address indexed buyer,
+        address indexed seller,
+        bytes32 indexed listingId,
+        uint256 price
+    );
     event ListingCancelled(bytes32 indexed listingId, address indexed seller);
-    
-    event FundsEscrowed(
-        bytes32 indexed listingId,
-        uint256 amount,
-        address seller,
-        address buyer
+    event EmergencyRefundEnabled(address indexed eventContract);
+    event EmergencyRefundClaimed(
+        address indexed user,
+        address indexed eventContract,
+        uint256 amount
     );
-    
-    event EscrowReleased(
-        bytes32 indexed listingId,
-        uint256 amount,
-        address recipient
+    event ProfitsCollected(
+        address indexed user,
+        address indexed eventContract,
+        uint256 amount
     );
-
-    event PriceValidated(
-        bytes32 indexed listingId,
-        uint256 newPrice,
-        uint256 lastPrice,
-        uint256 increasePercentage
+    event EventEnded(address indexed eventContract);
+    event RoyaltyPaid(
+        address indexed eventContract,
+        address indexed recipient,
+        uint256 amount
     );
-
-    event AuctionExtended(bytes32 indexed listingId, uint256 newEndTime, uint256 extensionCount);
+    event AuctionExtended(
+        bytes32 indexed listingId,
+        uint256 newEndTime,
+        uint256 extensionCount
+    );
     event MarketplacePaused(bool paused);
+    event EventContractAuthorized(
+        address indexed eventContract,
+        bool authorized
+    );
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -180,7 +214,13 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     }
 
     modifier validAddress(address _address) {
-        if (_address == address(0)) revert Marketplace__InvalidAddress();
+        require(_address != address(0), "Invalid address");
+        _;
+    }
+
+    modifier onlyAuthorizedEventContract() {
+        if (!authorizedEventContracts[msg.sender])
+            revert Marketplace__NotEventContract();
         _;
     }
 
@@ -190,29 +230,138 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     constructor(
         address _platformAddress,
         uint256 _platformFeePercent,
-        uint256 _maxAuctionDuration,
         address _userVerfierAddress
-    ) 
-        Ownable(msg.sender) 
+    )
+        Ownable(msg.sender)
         validAddress(_platformAddress)
         validAddress(_userVerfierAddress)
     {
-        // FIXED: Add comprehensive input validation
-        if (_platformFeePercent > MAX_PLATFORM_FEE) {
-            revert Marketplace__InvalidFeePercentage();
+        require(_platformFeePercent <= 1000, "Fee too high"); // Max 10% (1000 basis points)
+        I_USER_VERFIER_ADDRESS = _userVerfierAddress;
+        PLATFORM_ADDRESS = _platformAddress;
+        platformFeePercent = _platformFeePercent;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            DEPOSIT SYSTEM
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Users directly deposit funds for a specific event
+     */
+    function depositForEvent(
+        address eventContract
+    ) external payable nonReentrant notPaused {
+        require(msg.value > 0, "Must deposit some amount");
+        require(
+            !eventInfo[eventContract].emergencyRefund,
+            "Emergency refund active"
+        );
+
+        _registerDeposit(msg.sender, eventContract, msg.value, "direct");
+    }
+
+    /**
+     * @dev Called by an authorized EventTicket contract during a primary sale (mint).
+     * It receives the full mint price, credits the organizer and platform for deferred payment,
+     * and registers the full amount as a deposit for the minting user.
+     * @param user The address of the user who minted the ticket.
+     * @param organizer The address of the event organizer to be paid.
+     * @param organizerPercentage The percentage of the mint price owed to the organizer.
+     */
+    function registerPrimarySale(
+        address user,
+        address organizer,
+        uint256 organizerPercentage
+    ) external payable nonReentrant onlyAuthorizedEventContract {
+        uint256 totalAmount = msg.value;
+        if (totalAmount == 0) revert Marketplace__PaymentFailed();
+        address eventContract = msg.sender;
+
+        // Calculate and escrow shares for organizer and platform
+        uint256 organizerShare = (totalAmount * organizerPercentage) /
+            BASIS_POINTS;
+        uint256 platformShare = totalAmount - organizerShare;
+
+        if (organizerShare > 0) {
+            userBalances[organizer][eventContract]
+                .lockedBalance += organizerShare;
         }
-        
-        if (_maxAuctionDuration < MIN_AUCTION_DURATION || 
-            _maxAuctionDuration > MAX_AUCTION_DURATION) {
-            revert Marketplace__InvalidDuration();
+        if (platformShare > 0) {
+            platformFeesPayable[eventContract] += platformShare;
         }
 
-        PLATFORM_ADDRESS = _platformAddress;
-        config = PlatformConfig({
-            platformFeePercent: _platformFeePercent,
-            maxAuctionDuration: _maxAuctionDuration
-        });
-        I_USER_VERFIER_ADDRESS = _userVerfierAddress;
+        // Register the full mint price as a deposit for the user
+        _registerDeposit(user, eventContract, totalAmount, "mint");
+
+        emit PrimarySaleRegistered(user, eventContract, totalAmount);
+    }
+
+    /**
+     * @dev Internal function to register any type of deposit
+     */
+    function _registerDeposit(
+        address user,
+        address eventContract,
+        uint256 amount,
+        string memory depositType
+    ) internal {
+        UserBalance storage balance = userBalances[user][eventContract];
+        EventInfo storage info = eventInfo[eventContract];
+
+        // Track total deposited and available balance
+        balance.totalDeposited += amount;
+        balance.availableBalance += amount;
+
+        // Track for emergency refunds
+        info.userOriginalDeposits[user] += amount;
+        info.totalDeposited += amount;
+
+        emit FundsDeposited(user, eventContract, amount, depositType);
+    }
+
+    /**
+     * @dev Withdraw available funds (up to maximum of what user originally deposited)
+     */
+    function withdrawFunds(
+        address eventContract,
+        uint256 amount
+    ) external nonReentrant {
+        UserBalance storage balance = userBalances[msg.sender][eventContract];
+
+        // Check if user has enough available balance
+        require(
+            balance.availableBalance >= amount,
+            "Insufficient available balance"
+        );
+
+        // Cannot withdraw during emergency refund period
+        require(
+            !eventInfo[eventContract].emergencyRefund,
+            "Use emergency refund instead"
+        );
+
+        balance.availableBalance -= amount;
+        balance.totalWithdrawn += amount;
+
+        _safeTransfer(payable(msg.sender), amount);
+
+        emit FundsWithdrawn(msg.sender, eventContract, amount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            AUTHORIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Authorize event contracts to register mint payments
+     */
+    function authorizeEventContract(
+        address eventContract,
+        bool authorized
+    ) external onlyOwner {
+        authorizedEventContracts[eventContract] = authorized;
+        emit EventContractAuthorized(eventContract, authorized);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -225,11 +374,15 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         uint256 price
     ) external notPaused {
         require(price > 0, "Price must be greater than 0");
-        
+        require(
+            authorizedEventContracts[tokenContract],
+            "Event contract not authorized"
+        );
+
         _validateListing(tokenContract, tokenId);
         bytes32 listingId = getListingId(tokenContract, tokenId);
-        
-        _validatePriceIncrease(listingId, price, tokenContract, tokenId);
+
+        _validatePriceIncrease(listingId, price, tokenContract);
         _checkResaleCooldown(listingId);
 
         listings[listingId] = Listing({
@@ -262,17 +415,28 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         uint256 minBidIncrement
     ) external notPaused {
         require(startingPrice > 0, "Starting price must be greater than 0");
-        require(minBidIncrement > 0, "Min bid increment must be greater than 0");
-        require(reservePrice >= startingPrice, "Reserve must be >= starting price");
-        
-        if (duration > config.maxAuctionDuration || duration < MIN_AUCTION_DURATION) {
-            revert Marketplace__InvalidTime();
-        }
+        require(
+            minBidIncrement > 0,
+            "Min bid increment must be greater than 0"
+        );
+        require(
+            reservePrice >= startingPrice,
+            "Reserve must be >= starting price"
+        );
+        require(
+            duration >= MIN_AUCTION_DURATION &&
+                duration <= MAX_AUCTION_DURATION,
+            "Invalid duration" // Use Marketplace__InvalidDuration() error
+        );
+        require(
+            authorizedEventContracts[tokenContract],
+            "Event contract not authorized"
+        );
 
         _validateListing(tokenContract, tokenId);
         bytes32 listingId = getListingId(tokenContract, tokenId);
-        
-        _validatePriceIncrease(listingId, startingPrice, tokenContract, tokenId);
+
+        _validatePriceIncrease(listingId, startingPrice, tokenContract);
         _checkResaleCooldown(listingId);
 
         listings[listingId] = Listing({
@@ -302,7 +466,6 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
             startingPrice,
             SaleType.AUCTION
         );
-
         emit AuctionCreated(
             listingId,
             auction.startTime,
@@ -311,144 +474,156 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         );
     }
 
-    function cancelListing(
+    /*//////////////////////////////////////////////////////////////
+                            BUYING FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Buy item using deposited funds
+     */
+    function buyItemWithDeposits(
         address tokenContract,
         uint256 tokenId
     ) external nonReentrant notPaused {
         bytes32 listingId = getListingId(tokenContract, tokenId);
         Listing storage listing = listings[listingId];
-        
-        if (!listing.active) {
-            revert Marketplace__ItemNotListed(tokenContract, tokenId);
-        }
-        if (listing.seller != msg.sender) {
-            revert Marketplace__NotAuthorized();
-        }
 
-        if (listing.saleType == SaleType.AUCTION) {
-            Auction storage auction = auctions[listingId];
-            if (auction.highestBidder != address(0)) {
-                _refundAllBidders(listingId);
-            }
-            auction.status = AuctionStatus.CANCELLED;
-        }
+        require(listing.active, "Item not listed");
+        require(
+            listing.saleType == SaleType.FIXED_PRICE,
+            "Not a fixed price listing"
+        );
+        require(msg.sender != listing.seller, "Cannot buy own item");
+        require(
+            !eventInfo[tokenContract].emergencyRefund,
+            "Emergency refund active"
+        );
 
+        UserBalance storage buyerBalance = userBalances[msg.sender][
+            tokenContract
+        ];
+        require(
+            buyerBalance.availableBalance >= listing.price,
+            "Insufficient deposited funds"
+        );
+
+        // Execute the purchase using internal balances
+        buyerBalance.availableBalance -= listing.price;
+        _distributeSaleProceeds(
+            tokenContract,
+            listing.tokenId,
+            listing.price,
+            listing.seller
+        );
+
+        // Transfer NFT
+        IERC721(tokenContract).transferFrom(
+            listing.seller,
+            msg.sender,
+            tokenId
+        );
+
+        // Mark listing as inactive
         listing.active = false;
-        emit ListingCancelled(listingId, msg.sender);
-    }
 
-    /*//////////////////////////////////////////////////////////////
-                            BUYING FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function buyItem(
-        address tokenContract,
-        uint256 tokenId
-    ) external payable nonReentrant notPaused {
-        bytes32 listingId = getListingId(tokenContract, tokenId);
-        Listing storage listing = listings[listingId];
-        
-        if (!listing.active) {
-            revert Marketplace__ItemNotListed(tokenContract, tokenId);
-        }
-        if (listing.saleType != SaleType.FIXED_PRICE) {
-            revert Marketplace__InvalidTime();
-        }
-        if (msg.value < listing.price) {
-            revert Marketplace__InsufficientFunds(listing.price, msg.value);
-        }
-        if (msg.sender == listing.seller) {
-            revert Marketplace__CannotBuyOwnItem();
-        }
-
-        listing.active = false;
-        
-        uint256 eventStartTime = _getEventStartTime(tokenContract);
-        
-        _executeTransferWithEscrow(listingId, msg.sender, listing.price, eventStartTime);
-        
+        // Track sale data
         lastSalePrice[listingId] = listing.price;
         lastSaleTime[listingId] = block.timestamp;
-        
-        // FIXED: Refund excess payment
-        if (msg.value > listing.price) {
-            _safeTransfer(payable(msg.sender), msg.value - listing.price);
-        }
+        tokenContractVolume[tokenContract] += listing.price;
+        dailyVolume[block.timestamp / 1 days] += listing.price;
+
+        emit ItemSold(msg.sender, listing.seller, listingId, listing.price);
     }
 
     /**
-     * @dev FIXED: Completely corrected bidding logic
+     * @dev Place bid using deposited funds
      */
-    function placeBid(
+    function placeBidWithDeposits(
         address tokenContract,
-        uint256 tokenId
-    ) external payable nonReentrant notPaused {
+        uint256 tokenId,
+        uint256 bidAmount
+    ) external nonReentrant notPaused {
         bytes32 listingId = getListingId(tokenContract, tokenId);
         Listing storage listing = listings[listingId];
-        
-        if (!listing.active) {
-            revert Marketplace__ItemNotListed(tokenContract, tokenId);
-        }
-        if (listing.saleType != SaleType.AUCTION) {
-            revert Marketplace__InvalidTime();
-        }
-        if (listing.seller == msg.sender) {
-            revert Marketplace__CannotBuyOwnItem();
-        }
+
+        require(listing.active, "Item not listed");
+        require(listing.saleType == SaleType.AUCTION, "Not an auction");
+        require(msg.sender != listing.seller, "Cannot bid on own item");
+        require(
+            !eventInfo[tokenContract].emergencyRefund,
+            "Emergency refund active"
+        );
 
         Auction storage auction = auctions[listingId];
-        
-        if (block.timestamp >= auction.endTime) {
-            revert Marketplace__AuctionEnded();
-        }
-        if (auction.status != AuctionStatus.ACTIVE) {
-            revert Marketplace__AuctionEnded();
-        }
+        require(block.timestamp < auction.endTime, "Auction ended");
+        require(auction.status == AuctionStatus.ACTIVE, "Auction not active");
 
         uint256 minBid = auction.highestBid + auction.minBidIncrement;
         if (auction.highestBid == 0) {
             minBid = listing.price;
         }
+        require(bidAmount >= minBid, "Bid too low");
 
-        if (msg.value < minBid) {
-            revert Marketplace__BidTooLow();
+        UserBalance storage bidderBalance = userBalances[msg.sender][
+            tokenContract
+        ];
+        require(
+            bidderBalance.availableBalance >= bidAmount,
+            "Insufficient deposited funds"
+        );
+
+        // Handle previous bid refund
+        uint256 userPreviousBid = auction.bids[msg.sender];
+        if (userPreviousBid > 0) {
+            bidderBalance.availableBalance += userPreviousBid; // Refund previous bid
+            bidderBalance.lockedBalance -= userPreviousBid;
         }
 
-        // FIXED: Proper bidding logic with correct refund handling
-        address previousHighestBidder = auction.highestBidder;
-        uint256 previousHighestBid = auction.highestBid;
-        uint256 userPreviousBid = auction.bids[msg.sender];
+        // Handle previous highest bidder refund
+        if (
+            auction.highestBidder != address(0) &&
+            auction.highestBidder != msg.sender
+        ) {
+            UserBalance storage prevBidderBalance = userBalances[
+                auction.highestBidder
+            ][tokenContract];
+            prevBidderBalance.availableBalance += auction.highestBid;
+            prevBidderBalance.lockedBalance -= auction.highestBid;
+        }
 
-        // Update auction state first
-        auction.bids[msg.sender] = msg.value;
-        auction.highestBidder = msg.sender;
-        auction.highestBid = msg.value;
-
-        // Add to bidders array if first time
+        // Update auction state
         if (userPreviousBid == 0) {
             auction.bidders.push(msg.sender);
         }
 
-        // Handle refunds after state update
-        if (previousHighestBidder != address(0) && previousHighestBidder != msg.sender) {
-            // Refund previous highest bidder
-            _safeTransfer(payable(previousHighestBidder), previousHighestBid);
-        } else if (previousHighestBidder == msg.sender && userPreviousBid > 0) {
-            // User is outbidding themselves - refund their previous bid
-            _safeTransfer(payable(msg.sender), userPreviousBid);
-        }
+        auction.bids[msg.sender] = bidAmount;
+        auction.highestBidder = msg.sender;
+        auction.highestBid = bidAmount;
 
-        emit BidPlaced(listingId, msg.sender, msg.value, block.timestamp);
+        // Lock bidder's funds
+        bidderBalance.availableBalance -= bidAmount;
+        bidderBalance.lockedBalance += bidAmount;
 
-        // FIXED: Limited auction extension
-        if (auction.endTime - block.timestamp < 600 && 
-            auction.extensionCount < MAX_AUCTION_EXTENSIONS) {
+        emit BidPlaced(listingId, msg.sender, bidAmount, block.timestamp);
+
+        // Auto-extend auction if needed
+        if (
+            auction.endTime - block.timestamp < 600 &&
+            auction.extensionCount < MAX_AUCTION_EXTENSIONS
+        ) {
             auction.endTime += 600;
             auction.extensionCount++;
-            emit AuctionExtended(listingId, auction.endTime, auction.extensionCount);
+            emit AuctionExtended(
+                listingId,
+                auction.endTime,
+                auction.extensionCount
+            );
         }
     }
 
+    /**
+     * @dev Settle auction
+     */
     function settleAuction(
         address tokenContract,
         uint256 tokenId
@@ -456,393 +631,437 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         bytes32 listingId = getListingId(tokenContract, tokenId);
         Listing storage listing = listings[listingId];
         Auction storage auction = auctions[listingId];
-        
-        if (!listing.active) {
-            revert Marketplace__ItemNotListed(tokenContract, tokenId);
-        }
-        if (auction.status != AuctionStatus.ACTIVE) {
-            revert Marketplace__AuctionEnded();
-        }
-        if (block.timestamp < auction.endTime) {
-            revert Marketplace__AuctionActive();
-        }
+
+        require(listing.active, "Auction not active");
+        require(auction.status == AuctionStatus.ACTIVE, "Auction not active");
+        require(block.timestamp >= auction.endTime, "Auction still running");
 
         listing.active = false;
         auction.status = AuctionStatus.ENDED;
 
-        if (auction.highestBidder == address(0) || auction.highestBid < auction.reservePrice) {
+        if (
+            auction.highestBidder == address(0) ||
+            auction.highestBid < auction.reservePrice
+        ) {
             // No valid bids - refund all bidders
-            if (auction.highestBidder != address(0)) {
-                _refundAllBidders(listingId);
-            }
+            _refundAllBidders(listingId, tokenContract);
             emit AuctionSettled(listingId, address(0), 0);
             return;
         }
 
-        uint256 eventStartTime = _getEventStartTime(tokenContract);
-        
-        _executeTransferWithEscrow(listingId, auction.highestBidder, auction.highestBid, eventStartTime);
-        
+        // Transfer NFT to winner
+        IERC721(tokenContract).transferFrom(
+            listing.seller,
+            auction.highestBidder,
+            tokenId
+        );
+
+        // Settle funds from the winner's locked bid
+        UserBalance storage winnerBalance = userBalances[auction.highestBidder][
+            tokenContract
+        ];
+        winnerBalance.lockedBalance -= auction.highestBid; // The bid is now spent
+        _distributeSaleProceeds(
+            tokenContract,
+            tokenId,
+            auction.highestBid,
+            listing.seller
+        );
+
+        // Refund other bidders
+        for (uint256 i = 0; i < auction.bidders.length; i++) {
+            address bidder = auction.bidders[i];
+            if (bidder != auction.highestBidder) {
+                uint256 bidAmount = auction.bids[bidder];
+                if (bidAmount > 0) {
+                    UserBalance storage bidderBalance = userBalances[bidder][
+                        tokenContract
+                    ];
+                    bidderBalance.availableBalance += bidAmount;
+                    bidderBalance.lockedBalance -= bidAmount;
+                }
+            }
+        }
+
+        // Track sale data
         lastSalePrice[listingId] = auction.highestBid;
         lastSaleTime[listingId] = block.timestamp;
+        tokenContractVolume[tokenContract] += auction.highestBid;
+        dailyVolume[block.timestamp / 1 days] += auction.highestBid;
 
-        emit AuctionSettled(listingId, auction.highestBidder, auction.highestBid);
+        emit AuctionSettled(
+            listingId,
+            auction.highestBidder,
+            auction.highestBid
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
-                            ESCROW FUNCTIONS
+                        EVENT COMPLETION & PROFITS
     //////////////////////////////////////////////////////////////*/
 
-    function releaseEscrowedFunds(bytes32 listingId) external nonReentrant {
-        EscrowInfo storage escrow = escrowedFunds[listingId];
-        
-        if (escrow.amount == 0) {
-            revert Marketplace__ItemNotListed(address(0), 0);
-        }
-        if (escrow.released) {
-            revert Marketplace__FundsAlreadyReleased();
-        }
-        
-        // FIXED: Proper access control
-        if (msg.sender != escrow.buyer && msg.sender != escrow.seller && msg.sender != owner()) {
-            revert Marketplace__NotAuthorized();
-        }
-        
-        if (block.timestamp < escrow.eventStartTime + ESCROW_RELEASE_DELAY) {
-            revert Marketplace__EventNotCompleted();
-        }
+    /**
+     * @dev Mark event as ended and enable profit collection
+     */
+    function markEventEnded(address eventContract) external onlyOwner {
+        require(!eventInfo[eventContract].eventEnded, "Event already ended");
+        require(
+            !_getEventCancellationStatus(eventContract),
+            "Event was cancelled"
+        );
 
-        escrow.released = true;
-        uint256 amount = escrow.amount;
-        
-        _distributeFundsFromEscrow(listingId, amount);
-        
-        emit EscrowReleased(listingId, amount, escrow.seller);
+        eventInfo[eventContract].eventEnded = true;
+
+        emit EventEnded(eventContract);
     }
 
-    function emergencyReleaseFunds(address tokenContract, uint256 tokenId) external nonReentrant {
-        bytes32 listingId = getListingId(tokenContract, tokenId);
-        EscrowInfo storage escrow = escrowedFunds[listingId];
-        
-        if (escrow.amount == 0) {
-            revert Marketplace__ItemNotListed(tokenContract, tokenId);
-        }
-        if (escrow.released) {
-            revert Marketplace__FundsAlreadyReleased();
-        }
-        
-        // FIXED: Proper access control
-        if (msg.sender != escrow.buyer && msg.sender != escrow.seller && msg.sender != owner()) {
-            revert Marketplace__NotAuthorized();
-        }
+    /**
+     * @dev Collect profits after event ends (locked balances become available)
+     */
+    function collectProfits(address eventContract) external nonReentrant {
+        require(eventInfo[eventContract].eventEnded, "Event not ended yet");
+        require(
+            !eventInfo[eventContract].emergencyRefund,
+            "Emergency refund active"
+        );
 
-        bool eventCancelled = _getEventCancellationStatus(tokenContract);
-        if (!eventCancelled) {
-            revert Marketplace__EventNotCompleted();
-        }
+        UserBalance storage balance = userBalances[msg.sender][eventContract];
+        require(balance.lockedBalance > 0, "No profits to collect");
 
-        escrow.released = true;
-        
-        _safeTransfer(payable(escrow.buyer), escrow.amount);
-        
-        emit EscrowReleased(listingId, escrow.amount, escrow.buyer);
+        uint256 lockedAmount = balance.lockedBalance;
+        balance.lockedBalance = 0;
+
+        // Add to available balance as profits
+        // The lockedAmount is the net profit for the seller after royalties and platform fees.
+        balance.availableBalance += lockedAmount;
+        balance.totalProfits += lockedAmount;
+
+        emit ProfitsCollected(msg.sender, eventContract, lockedAmount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        EMERGENCY REFUND SYSTEM
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Enable emergency refunds for cancelled event
+     */
+    function enableEmergencyRefund(address eventContract) external onlyOwner {
+        require(
+            _getEventCancellationStatus(eventContract),
+            "Event not cancelled"
+        );
+        require(!eventInfo[eventContract].emergencyRefund, "Already enabled");
+
+        eventInfo[eventContract].emergencyRefund = true;
+
+        emit EmergencyRefundEnabled(eventContract);
+    }
+
+    /**
+     * @dev Claim emergency refund (full original deposit, no fees)
+     */
+    function claimEmergencyRefund(address eventContract) external nonReentrant {
+        require(
+            eventInfo[eventContract].emergencyRefund,
+            "Emergency refund not enabled"
+        );
+
+        EventInfo storage info = eventInfo[eventContract];
+        UserBalance storage balance = userBalances[msg.sender][eventContract];
+
+        // Refund original deposits plus any locked profits (from sales/organizer fees)
+        uint256 refundAmount = info.userOriginalDeposits[msg.sender] +
+            balance.lockedBalance;
+        require(refundAmount > 0, "No deposits to refund");
+
+        // Clear user's deposits and balance for this event
+        info.userOriginalDeposits[msg.sender] = 0;
+        delete userBalances[msg.sender][eventContract];
+
+        // Send full refund (no platform fees on cancelled events)
+        _safeTransfer(payable(msg.sender), refundAmount);
+
+        emit EmergencyRefundClaimed(msg.sender, eventContract, refundAmount);
+    }
+
+    /**
+     * @dev Allows royalty recipients to withdraw their earnings for an event.
+     */
+    function withdrawRoyalties(
+        address eventContract,
+        address payable recipient
+    ) external nonReentrant {
+        require(eventInfo[eventContract].eventEnded, "Event not ended yet");
+        uint256 amount = royaltiesPayable[eventContract][recipient];
+        require(amount > 0, "No royalties to withdraw");
+
+        royaltiesPayable[eventContract][recipient] = 0;
+        _safeTransfer(recipient, amount);
+
+        emit RoyaltyPaid(eventContract, recipient, amount);
+    }
+
+    /**
+     * @dev Allows the platform to withdraw its fees for an event.
+     */
+    function withdrawPlatformFees(address eventContract) external nonReentrant {
+        require(
+            msg.sender == PLATFORM_ADDRESS || msg.sender == owner(),
+            "Not authorized"
+        );
+        require(eventInfo[eventContract].eventEnded, "Event not ended yet");
+
+        uint256 amount = platformFeesPayable[eventContract];
+        require(amount > 0, "No fees to withdraw");
+
+        platformFeesPayable[eventContract] = 0;
+        _safeTransfer(payable(PLATFORM_ADDRESS), amount);
     }
 
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function _validateListing(address tokenContract, uint256 tokenId) internal view {
-        if (IERC721(tokenContract).ownerOf(tokenId) != msg.sender) {
-            revert Marketplace__NotAuthorized();
-        }
-        
-        if (!IERC721(tokenContract).isApprovedForAll(msg.sender, address(this))) {
-            if (IERC721(tokenContract).getApproved(tokenId) != address(this)) {
-                revert Marketplace__NotAuthorized();
+    function _distributeSaleProceeds(
+        address tokenContract,
+        uint256 tokenId,
+        uint256 price,
+        address seller
+    ) internal {
+        // 1. Calculate Royalty
+        uint256 royaltyAmount = 0;
+        address royaltyRecipient = address(0);
+
+        if (
+            IERC165(tokenContract).supportsInterface(type(IERC2981).interfaceId)
+        ) {
+            try IERC2981(tokenContract).royaltyInfo(tokenId, price) returns (
+                address recipient,
+                uint256 rAmount
+            ) {
+                if (recipient != address(0) && rAmount > 0 && rAmount < price) {
+                    royaltyRecipient = recipient;
+                    royaltyAmount = rAmount;
+                }
+            } catch {
+                /* Proceed without royalty if call fails */
             }
         }
+
+        // 2. Calculate Platform Fee
+        uint256 platformFee = (price * platformFeePercent) / BASIS_POINTS;
+        uint256 sellerAmount = price - royaltyAmount - platformFee;
+
+        userBalances[seller][tokenContract].lockedBalance += sellerAmount;
+        if (royaltyAmount > 0)
+            royaltiesPayable[tokenContract][royaltyRecipient] += royaltyAmount;
+        if (platformFee > 0) platformFeesPayable[tokenContract] += platformFee;
+    }
+
+    function _validateListing(
+        address tokenContract,
+        uint256 tokenId
+    ) internal view {
+        require(
+            IERC721(tokenContract).ownerOf(tokenId) == msg.sender,
+            "Not token owner"
+        );
+        require(
+            IERC721(tokenContract).isApprovedForAll(
+                msg.sender,
+                address(this)
+            ) || IERC721(tokenContract).getApproved(tokenId) == address(this),
+            "Not approved"
+        );
     }
 
     function _validatePriceIncrease(
-        bytes32 listingId, 
-        uint256 newPrice, 
-        address tokenContract, 
-        uint256 tokenId
-    ) internal {
+        bytes32 listingId,
+        uint256 newPrice,
+        address tokenContract
+    ) internal view {
         uint256 lastPrice = lastSalePrice[listingId];
-        
+
         if (lastPrice > 0) {
-            uint256 maxAllowedPrice = lastPrice + (lastPrice * PRICE_INCREASE_LIMIT / BASIS_POINTS);
-            if (newPrice > maxAllowedPrice) {
-                revert Marketplace__PriceIncreaseTooHigh();
-            }
-            
-            uint256 increasePercentage = ((newPrice - lastPrice) * BASIS_POINTS) / lastPrice;
-            emit PriceValidated(listingId, newPrice, lastPrice, increasePercentage);
+            uint256 maxAllowedPrice = lastPrice +
+                ((lastPrice * PRICE_INCREASE_LIMIT) / BASIS_POINTS);
+            require(newPrice <= maxAllowedPrice, "Price increase too high");
         } else {
             uint256 mintPrice = _getMintPrice(tokenContract);
             if (mintPrice > 0) {
-                uint256 maxAllowedPrice = mintPrice + (mintPrice * PRICE_INCREASE_LIMIT / BASIS_POINTS);
-                if (newPrice > maxAllowedPrice) {
-                    revert Marketplace__PriceIncreaseTooHigh();
-                }
-                
-                uint256 increasePercentage = ((newPrice - mintPrice) * BASIS_POINTS) / mintPrice;
-                emit PriceValidated(listingId, newPrice, mintPrice, increasePercentage);
+                uint256 maxAllowedPrice = mintPrice +
+                    ((mintPrice * PRICE_INCREASE_LIMIT) / BASIS_POINTS);
+                require(
+                    newPrice <= maxAllowedPrice,
+                    "Price increase too high from mint"
+                );
             }
         }
     }
 
     function _checkResaleCooldown(bytes32 listingId) internal view {
         uint256 lastSale = lastSaleTime[listingId];
-        if (lastSale > 0 && block.timestamp < lastSale + RESALE_COOLDOWN) {
-            revert Marketplace__ResaleCooldownActive();
-        }
-    }
-
-    function _executeTransferWithEscrow(
-        bytes32 listingId,
-        address buyer,
-        uint256 amount,
-        uint256 eventStartTime
-    ) internal {
-        Listing memory listing = listings[listingId];
-
-        // Transfer NFT immediately
-        IERC721(listing.tokenContract).transferFrom(
-            listing.seller,
-            buyer,
-            listing.tokenId
+        require(
+            lastSale == 0 || block.timestamp >= lastSale + RESALE_COOLDOWN,
+            "Resale cooldown active"
         );
-
-        // Escrow funds until after event
-        escrowedFunds[listingId] = EscrowInfo({
-            amount: amount,
-            seller: listing.seller,
-            buyer: buyer,
-            released: false,
-            eventStartTime: eventStartTime
-        });
-
-        emit FundsEscrowed(listingId, amount, listing.seller, buyer);
-
-        // Track volume
-        tokenContractVolume[listing.tokenContract] += amount;
-        dailyVolume[block.timestamp / 1 days] += amount;
     }
 
-    /**
-     * @dev FIXED: Safe fund distribution with comprehensive error handling
-     */
-    function _distributeFundsFromEscrow(bytes32 listingId, uint256 amount) internal {
-        Listing memory listing = listings[listingId];
-        
-        uint256 royaltyAmount = 0;
-        address royaltyRecipient = address(0);
-        
-        // FIXED: Robust royalty calculation
-        if (IERC165(listing.tokenContract).supportsInterface(type(IERC2981).interfaceId)) {
-            try IERC2981(listing.tokenContract).royaltyInfo(listing.tokenId, amount) 
-                returns (address recipient, uint256 royalty) {
-                if (recipient != address(0) && royalty <= amount) {
-                    royaltyRecipient = recipient;
-                    royaltyAmount = royalty;
-                }
-            } catch {
-                // Ignore royalty calculation failure
-            }
-        }
-
-        uint256 platformFee = (amount * config.platformFeePercent) / BASIS_POINTS;
-        
-        // FIXED: Comprehensive fee validation
-        uint256 totalFees = platformFee + royaltyAmount;
-        if (totalFees > amount) {
-            platformFee = (platformFee * amount) / totalFees;
-            royaltyAmount = (royaltyAmount * amount) / totalFees;
-            totalFees = platformFee + royaltyAmount;
-        }
-        
-        uint256 sellerAmount = amount - totalFees;
-
-        // FIXED: Check contract balance before transfers
-        if (address(this).balance < amount) {
-            revert Marketplace__InsufficientContractBalance();
-        }
-
-        // Distribute payments
-        if (sellerAmount > 0) {
-            _safeTransfer(payable(listing.seller), sellerAmount);
-        }
-        if (platformFee > 0) {
-            _safeTransfer(payable(PLATFORM_ADDRESS), platformFee);
-        }
-        if (royaltyAmount > 0 && royaltyRecipient != address(0)) {
-            _safeTransfer(payable(royaltyRecipient), royaltyAmount);
-        }
-    }
-
-    function _safeTransfer(address payable recipient, uint256 amount) internal {
-        if (amount == 0) return;
-        
-        (bool success, ) = recipient.call{value: amount}("");
-        if (!success) {
-            revert Marketplace__PaymentFailed();
-        }
-    }
-
-    function _refundBidder(address bidder, uint256 amount) internal {
-        _safeTransfer(payable(bidder), amount);
-    }
-
-    /**
-     * @dev FIXED: Improved bidder refund with proper accounting
-     */
-    function _refundAllBidders(bytes32 listingId) internal {
+    function _refundAllBidders(
+        bytes32 listingId,
+        address tokenContract
+    ) internal {
         Auction storage auction = auctions[listingId];
-        
+
         for (uint256 i = 0; i < auction.bidders.length; i++) {
             address bidder = auction.bidders[i];
             uint256 bidAmount = auction.bids[bidder];
-            
+
             if (bidAmount > 0) {
+                UserBalance storage bidderBalance = userBalances[bidder][
+                    tokenContract
+                ];
+                bidderBalance.availableBalance += bidAmount;
+                bidderBalance.lockedBalance -= bidAmount;
                 auction.bids[bidder] = 0;
-                _safeTransfer(payable(bidder), bidAmount);
             }
         }
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        OPTIMIZED EXTERNAL CALLS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev FIXED: Gas-optimized external calls
-     */
-    function _trackMarketplaceUsage(address tokenContract, address user, uint256 tokenId) internal {
+    function _trackMarketplaceUsage(
+        address tokenContract,
+        address user,
+        uint256 tokenId
+    ) internal {
         (bool success, ) = tokenContract.call(
-            abi.encodeWithSignature("trackMarketplaceUsage(address,uint256)", user, tokenId)
+            abi.encodeWithSignature(
+                "trackMarketplaceUsage(address,uint256)",
+                user,
+                tokenId
+            )
         );
-        // Ignore failure - marketplace still functions
+        // Ignore failure
     }
 
-    function _getEventStartTime(address tokenContract) internal view returns (uint256) {
-        (bool success, bytes memory data) = tokenContract.staticcall(
-            abi.encodeWithSignature("eventStartTime()")
-        );
-        
-        if (success && data.length >= 32) {
-            return abi.decode(data, (uint256));
-        }
-        
-        return block.timestamp + 30 days; // Default fallback
-    }
-
-    function _getEventCancellationStatus(address tokenContract) internal view returns (bool) {
+    function _getEventCancellationStatus(
+        address tokenContract
+    ) internal view returns (bool) {
         (bool success, bytes memory data) = tokenContract.staticcall(
             abi.encodeWithSignature("eventCancelled()")
         );
-        
+
         if (success && data.length >= 32) {
             return abi.decode(data, (bool));
         }
-        
-        return false; // Default to not cancelled
+
+        return false;
     }
 
-    function _getMintPrice(address tokenContract) internal view returns (uint256) {
-        // Try mintPrice first
+    // Removed mintPrice() check as EventTicket.sol only has baseMintPrice()
+    function _getMintPrice(
+        address tokenContract
+    ) internal view returns (uint256) {
         (bool success, bytes memory data) = tokenContract.staticcall(
-            abi.encodeWithSignature("mintPrice()")
-        );
-        
-        if (success && data.length >= 32) {
-            return abi.decode(data, (uint256));
-        }
-        
-        // Try baseMintPrice as fallback
-        (success, data) = tokenContract.staticcall(
             abi.encodeWithSignature("baseMintPrice()")
         );
-        
+
         if (success && data.length >= 32) {
             return abi.decode(data, (uint256));
         }
-        
+
         return 0;
+    }
+
+    /**
+     * @dev Internal function to safely transfer ETH.
+     */
+    function _safeTransfer(address payable recipient, uint256 amount) internal {
+        (bool success, ) = recipient.call{value: amount}("");
+        if (!success) revert Marketplace__PaymentFailed();
     }
 
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getListingId(address tokenContract, uint256 tokenId) public pure returns (bytes32) {
+    function getListingId(
+        address tokenContract,
+        uint256 tokenId
+    ) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(tokenContract, tokenId));
     }
 
-    function getAuctionInfo(address tokenContract, uint256 tokenId)
+    function getUserBalance(
+        address user,
+        address eventContract
+    )
         external
         view
         returns (
-            uint256 startTime,
-            uint256 endTime,
-            uint256 reservePrice,
-            address highestBidder,
-            uint256 highestBid,
-            AuctionStatus status,
-            uint256 extensionCount
+            uint256 totalDeposited,
+            uint256 availableBalance,
+            uint256 lockedBalance,
+            uint256 totalWithdrawn,
+            uint256 totalProfits,
+            uint256 maxWithdrawable
         )
     {
-        bytes32 listingId = getListingId(tokenContract, tokenId);
-        Auction storage auction = auctions[listingId];
+        UserBalance storage balance = userBalances[user][eventContract];
+        uint256 maxWithdraw = balance.totalDeposited > balance.totalWithdrawn
+            ? balance.totalDeposited - balance.totalWithdrawn
+            : 0;
+
         return (
-            auction.startTime,
-            auction.endTime,
-            auction.reservePrice,
-            auction.highestBidder,
-            auction.highestBid,
-            auction.status,
-            auction.extensionCount
+            balance.totalDeposited,
+            balance.availableBalance,
+            balance.lockedBalance,
+            balance.totalWithdrawn,
+            balance.totalProfits,
+            maxWithdraw > balance.availableBalance
+                ? balance.availableBalance
+                : maxWithdraw
         );
     }
 
-    function getEscrowInfo(bytes32 listingId) external view returns (EscrowInfo memory) {
-        return escrowedFunds[listingId];
+    function getEventInfo(
+        address eventContract
+    )
+        external
+        view
+        returns (bool eventEnded, bool emergencyRefund, uint256 totalDeposited)
+    {
+        EventInfo storage info = eventInfo[eventContract];
+        return (info.eventEnded, info.emergencyRefund, info.totalDeposited);
     }
 
-    function getTodaysVolume() external view returns (uint256) {
-        return dailyVolume[block.timestamp / 1 days];
+    function getUserOriginalDeposit(
+        address user,
+        address eventContract
+    ) external view returns (uint256) {
+        return eventInfo[eventContract].userOriginalDeposits[user];
     }
 
-    function getLastSaleInfo(bytes32 listingId) external view returns (uint256 price, uint256 time) {
-        return (lastSalePrice[listingId], lastSaleTime[listingId]);
+    function getRoyaltiesPayable(
+        address eventContract,
+        address recipient
+    ) external view returns (uint256) {
+        return royaltiesPayable[eventContract][recipient];
     }
 
-    function getBidInfo(bytes32 listingId, address bidder) external view returns (uint256) {
-        return auctions[listingId].bids[bidder];
-    }
-
-    function getAuctionBidders(bytes32 listingId) external view returns (address[] memory) {
-        return auctions[listingId].bidders;
+    function getPlatformFeesPayable(
+        address eventContract
+    ) external view returns (uint256) {
+        return platformFeesPayable[eventContract];
     }
 
     /*//////////////////////////////////////////////////////////////
                             OWNER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function updatePlatformFee(uint256 newFee) external onlyOwner {
-        if (newFee > MAX_PLATFORM_FEE) {
-            revert Marketplace__InvalidFeePercentage();
-        }
-        config.platformFeePercent = newFee;
-    }
-
-    function updateMaxAuctionDuration(uint256 newDuration) external onlyOwner {
-        if (newDuration < MIN_AUCTION_DURATION || newDuration > MAX_AUCTION_DURATION) {
-            revert Marketplace__InvalidDuration();
-        }
-        config.maxAuctionDuration = newDuration;
+    function updatePlatformFee(uint256 newFeePercent) external onlyOwner {
+        require(newFeePercent <= 1000, "Fee too high");
+        platformFeePercent = newFeePercent;
     }
 
     function setPaused(bool _paused) external onlyOwner {
@@ -851,20 +1070,6 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     }
 
     function emergencyWithdraw() external onlyOwner {
-        _safeTransfer(payable(owner()), address(this).balance);
-    }
-
-    /**
-     * @dev FIXED: More restrictive emergency escrow release
-     */
-    function emergencyReleaseEscrow(bytes32 listingId) external onlyOwner {
-        EscrowInfo storage escrow = escrowedFunds[listingId];
-        require(escrow.amount > 0 && !escrow.released, "Invalid escrow");
-        
-        escrow.released = true;
-        // Always refund to buyer in emergency - more fair and secure
-        _safeTransfer(payable(escrow.buyer), escrow.amount);
-        
-        emit EscrowReleased(listingId, escrow.amount, escrow.buyer);
+        payable(owner()).transfer(address(this).balance);
     }
 }

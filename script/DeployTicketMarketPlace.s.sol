@@ -8,20 +8,17 @@ import {Script} from "forge-std/Script.sol";
 contract DeployTicketMarketPlace is Script {
     function run(
         address _platformAddress,
-        uint256 _platformFeePercent,
-        uint256 _maxAuctionDuration,
-        address _userVerfierAddress
-    ) external returns (address) {
+        uint256 _platformFeePercent // Note: maxAuctionDuration is now a constant in the contract
+    ) external returns (address ticketMarketplaceAddress) {
         vm.startBroadcast();
 
         TicketMarketplace ticketMarketplace = new TicketMarketplace(
             _platformAddress,
-            _platformFeePercent,
-            _maxAuctionDuration,
-            _userVerfierAddress
+            _platformFeePercent, // e.g., 250 for 2.5%
+            address(0) // TODO: Replace with actual UserVerifier address
         );
 
         vm.stopBroadcast();
-        return address(ticketMarketplace);
+        ticketMarketplaceAddress = address(ticketMarketplace);
     }
 }

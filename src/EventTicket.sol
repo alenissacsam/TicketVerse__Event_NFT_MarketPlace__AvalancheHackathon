@@ -60,6 +60,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     error EventTicket__SeatAlreadyTaken();
     error EventTicket__VIPSeatNotAvailable();
     error EventTicket__NotOnWhitelist();
+    error EventTicket__MarketplaceDepositFailed();
     error EventTicket__CallerNotMarketplace();
     error EventTicket__TokenDoesNotExist();
     error EventTicket__EventAlreadyEnded();
@@ -91,8 +92,8 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     // Enhanced mappings
     mapping(address => uint256) public lastMintTime;
     mapping(uint256 => TicketInfo) public tickets;
-    mapping(address => uint256) public userMintCount;
-    mapping(address => bool) public hasUsedMarketplace;
+    mapping(address => uint256) public userMintCount; // A user's mint count for this event
+    mapping(uint256 => bool) public hasUsedMarketplace; // A specific ticket has been involved with the marketplace
     mapping(address => bool) public waitlistApproved;
     mapping(uint256 => bool) public vipSeatsUsed;
     mapping(string => bool) public seatTaken;
@@ -371,7 +372,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     function calculateRefundPercentage(address user, uint256 tokenId)
         external view tokenExists(tokenId) returns (uint256) {
         if (eventCancelled) return BASIS_POINTS; // 100% if event cancelled
-        if (hasUsedMarketplace[user]) return 0; // No refund if used marketplace
+        if (hasUsedMarketplace[tokenId]) return 0; // No refund if used marketplace
         if (tickets[tokenId].isUsed) return 0; // No refund if ticket was used
         if (userRefundCount[user] >= MAX_REFUNDS_PER_USER) return 0; // Prevent abuse
 
@@ -467,7 +468,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
 
     function trackMarketplaceUsage(address user, uint256 tokenId) external {
         require(msg.sender == marketplaceAddress, "Not marketplace");
-        hasUsedMarketplace[user] = true;
+        hasUsedMarketplace[tokenId] = true;
         emit MarketplaceUsageTracked(user, tokenId);
     }
 
@@ -519,18 +520,19 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     function _distributeFunds(uint256 amount) private {
-        uint256 organizerShare = (amount * I_ORGANIZER_PERCENTAGE) / BASIS_POINTS;
-        uint256 platformShare = amount - organizerShare;
-
-        (bool sent1, ) = payable(eventOrganizer).call{value: organizerShare}("");
-        if (!sent1) {
-            revert EventTicket__OrganizerPaymentFailed();
+        if (marketplaceAddress == address(0)) {
+            revert EventTicket__ZeroAddressNotAllowed();
         }
-
-        (bool sent2, ) = payable(platformAddress).call{value: platformShare}("");
-        if (!sent2) {
-            revert EventTicket__PlatformPaymentFailed();
-        }
+        // Forward the entire mint payment to the marketplace for deferred settlement
+        (bool success, ) = marketplaceAddress.call{value: amount}(
+            abi.encodeWithSignature(
+                "registerPrimarySale(address,address,uint256)",
+                msg.sender, // minter
+                eventOrganizer,
+                I_ORGANIZER_PERCENTAGE
+            )
+        );
+        if (!success) revert EventTicket__MarketplaceDepositFailed();
     }
 
     /**
@@ -572,7 +574,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         if (from != address(0) && to != address(0)) {
             require(tickets[tokenId].isTransferable, "Ticket not transferable");
             if (auth != marketplaceAddress) {
-                hasUsedMarketplace[from] = true;
+                hasUsedMarketplace[tokenId] = true;
             }
         }
 
