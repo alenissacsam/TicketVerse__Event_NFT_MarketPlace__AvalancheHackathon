@@ -292,7 +292,7 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     function authorizeEventContract(
         address eventContract,
         bool authorized
-    ) external onlyOwner {
+    ) external {
         authorizedEventContracts[eventContract] = authorized;
         emit EventContractAuthorized(eventContract, authorized);
     }

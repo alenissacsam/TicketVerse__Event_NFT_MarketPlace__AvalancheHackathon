@@ -33,6 +33,8 @@ contract EventFactory is Ownable {
     uint256 public platformCreationFeePercentage = 200; // 2%
     uint256 public minEventSetupTime = 24 hours;
 
+    address public _marketplaceAddress;
+
     // Counters
     uint256 public totalEventsCreated;
     mapping(address => uint256) public organizerEventCount;
@@ -102,7 +104,9 @@ contract EventFactory is Ownable {
         string vipTokenURIBase;        // optional: base URI for VIP seats
         string nonVipTokenURIBase;     // optional: base URI for regular seats
     }
-
+    function addMarketplaceAddress(address _marketplace) public onlyOwner {
+        _marketplaceAddress = _marketplace;
+    }
     function createEvent(CreateEventParams calldata p)
         external
         payable
@@ -146,6 +150,7 @@ contract EventFactory is Ownable {
             p.vipTokenURIBase,
             p.nonVipTokenURIBase
         );
+        newEvent.addMarketPlaceAddress(_marketplaceAddress);
 
         deployed = address(newEvent);
         if (deployed == address(0)) revert DeploymentFailed();
@@ -223,8 +228,16 @@ contract EventFactory is Ownable {
     function _distributeCreationFees(uint256 amount) internal {
         uint256 platformFee = (amount * platformCreationFeePercentage) / 10000;
         uint256 remainder = amount - platformFee;
-        if (platformFee > 0) payable(I_PLATFORM_ADDRESS).transfer(platformFee);
-        if (remainder > 0) payable(owner()).transfer(remainder);
+        if (platformFee > 0) {
+            (bool success, ) = I_PLATFORM_ADDRESS.call{value: platformFee}("");
+            // Using a more specific error than DeploymentFailed would be ideal,
+            // but this prevents the transaction from silently failing.
+            if (!success) revert DeploymentFailed();
+        }
+        if (remainder > 0) {
+            (bool success, ) = owner().call{value: remainder}("");
+            if (!success) revert DeploymentFailed();
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

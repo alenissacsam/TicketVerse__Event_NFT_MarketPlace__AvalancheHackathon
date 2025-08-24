@@ -461,11 +461,21 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         // Here we append seat number for uniqueness: base + seatNumber
         return string(abi.encodePacked(isVIP ? baseVipTokenURI : baseNonVipTokenURI, _toString(seatNumber)));
     }
-
+    function addMarketPlaceAddress(address _marketplace)external onlyOwner {
+        marketplaceAddress = _marketplace;
+    }
     function _distributeFunds(uint256 amount) internal {
         if (marketplaceAddress == address(0)) revert EventTicket__ZeroAddressNotAllowed();
         // Forward the entire mint payment to the marketplace for deferred settlement
-        (bool success, ) = marketplaceAddress.call{value: amount}(
+        
+        (bool success, ) = marketplaceAddress.call(
+            abi.encodeWithSignature(
+                "authorizeEventContract(address,bool)",
+                address(this),
+                true
+            )
+        );
+        (bool success2, ) = marketplaceAddress.call{value: amount}(
             abi.encodeWithSignature(
                 "registerPrimarySale(address,address,uint256)",
                 msg.sender, // minter
@@ -473,7 +483,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
                 I_ORGANIZER_PERCENTAGE
             )
         );
-        if (!success) revert EventTicket__MarketplaceDepositFailed();
+        if (!success2) revert EventTicket__MarketplaceDepositFailed();
     }
 
     function _isUserVerified(address user) internal view returns (bool) {
