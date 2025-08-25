@@ -88,8 +88,8 @@ contract CreateEventInteraction is Script {
             venue: "Hyderabad",
             eventDescription: "Coldplay Concert",
             seatCount: 10000,
-            vipTokenURIBase: "https://ivory-bitter-gerbil-665.mypinata.cloud/ipfs/bafkreiba6v3bsvolamsselbhngrkgubebgtlwcj6h7udyjzvy3vyg5tfgi", // Corrected: Encased in quotes
-            nonVipTokenURIBase: "https://ivory-bitter-gerbil-665.mypinata.cloud/ipfs/bafkreihyci4s7ct6sbi7g3qtwj532jp7wzr2htvhowf46oyg3miss5ny6e" // Corrected: Encased in quotes
+            vipTokenURIBase: "https://ipfs.io/ipfs/bafkreiariqy4dml42gvqlxs6g673k7wtixhkawqajxbyuaz3evmlggvjfy", // Corrected: Encased in quotes
+            nonVipTokenURIBase: "https://ipfs.io/ipfs/bafkreiemi4ycoqlcys2davu44wsmevdqbnvhlxwd4wegys6e3uzfm4ra7i" // Corrected: Encased in quotes
         }));
         vm.stopBroadcast();
 
@@ -106,10 +106,10 @@ contract MintInteractions is Script {
             )
         );
 
-        EventTicket eventTicket =EventTicket(eventFactory.getAllDeployedEvents()[0]);
+        EventTicket eventTicket =EventTicket(eventFactory.getAllDeployedEvents()[2]);
         console.log("EventTicket Address:", address(eventTicket));
         vm.startBroadcast();
-        eventTicket.mintTicket{value: 0.0001 ether}("Coldplay Concert", 1001);
+        eventTicket.mintTicket{value: 0.0001 ether}("Coldplay Concert", 1002);
         vm.stopBroadcast();
     }
 }
