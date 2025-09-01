@@ -6,14 +6,14 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {UserVerification} from "./UserVerification.sol";
-import "./MarketPlaceStructAndVariables.sol";
+import {MarketPlaceErrorsEnumsAndStruct} from "./Interface/IMarketPlaceErrorsEnumsAndStruct.sol";
 
 /**
  * @title TicketMarketplace
  * @author alenissacsam (Enhanced by AI)
  * @dev NFT mint payments count as deposits, users can withdraw up to total deposits
  */
-contract TicketMarketplace is ReentrancyGuard, Ownable {
+contract TicketMarketplace is ReentrancyGuard, Ownable, MarketPlaceErrorsEnumsAndStruct{
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/

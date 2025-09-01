@@ -8,14 +8,14 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
-    error UnauthorizedOrganizer();
-    error ZeroAddress();
-    error InsufficientCreationFee();
-    error DeploymentFailed();
-    error FeeTooHigh();
-    error PercentageTooHigh();
-    error InvalidLimit();
-    error InvalidSetupTime();
+    error EventFactory__UnauthorizedOrganizer();
+    error EventFactory__ZeroAddress();
+    error EventFactory__InsufficientCreationFee();
+    error EventFactory__DeploymentFailed();
+    error EventFactory__FeeTooHigh();
+    error EventFactory__PercentageTooHigh();
+    error EventFactory__InvalidLimit();
+    error EventFactory__InvalidSetupTime();
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -51,7 +51,7 @@ contract EventFactory is Ownable {
     //////////////////////////////////////////////////////////////*/
     modifier onlyAuthorizedOrganizer() {
         if (!authorizedOrganizers[msg.sender] && owner() != msg.sender) {
-            revert UnauthorizedOrganizer();
+            revert EventFactory__UnauthorizedOrganizer();
         }
         _;
     }
@@ -60,7 +60,7 @@ contract EventFactory is Ownable {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
     constructor(address _platformAddress, address _userVerifierAddress) Ownable(msg.sender) {
-        if (_platformAddress == address(0) || _userVerifierAddress == address(0)) revert ZeroAddress();
+        if (_platformAddress == address(0) || _userVerifierAddress == address(0)) revert EventFactory__ZeroAddress();
         I_PLATFORM_ADDRESS = _platformAddress;
         I_USER_VERFIER_ADDRESS = _userVerifierAddress;
 
@@ -114,7 +114,7 @@ contract EventFactory is Ownable {
         onlyAuthorizedOrganizer
         returns (address deployed)
     {
-        if (msg.value < eventCreationFee) revert InsufficientCreationFee();
+        if (msg.value < eventCreationFee) revert EventFactory__InsufficientCreationFee();
 
         // Delegate detailed validation to EventTicket constructor to save factory bytecode.
         uint256 mintsPerUser = p.maxMintsPerUser > 0 ? p.maxMintsPerUser : defaultMaxMintsPerUser;
@@ -154,7 +154,7 @@ contract EventFactory is Ownable {
         newEvent.addMarketPlaceAddress(_marketplaceAddress);
 
         deployed = address(newEvent);
-        if (deployed == address(0)) revert DeploymentFailed();
+        if (deployed == address(0)) revert EventFactory__DeploymentFailed();
 
         // Bookkeeping
         _deployedEvents.push(deployed);
@@ -200,20 +200,20 @@ contract EventFactory is Ownable {
                               CONFIG SETTERS
     //////////////////////////////////////////////////////////////*/
     function updateCreationFee(uint256 newFee) external isAdmin {
-        if (newFee > 1 ether) revert FeeTooHigh();
+        if (newFee > 1 ether) revert EventFactory__FeeTooHigh();
         eventCreationFee = newFee;
         emit ConfigUpdated("eventCreationFee", newFee);
     }
 
     function updatePlatformFeePercentage(uint256 newPct) external isAdmin {
-        if (newPct > 1000) revert PercentageTooHigh(); // Max 10%
+        if (newPct > 1000) revert EventFactory__PercentageTooHigh(); // Max 10%
         platformCreationFeePercentage = newPct;
         emit ConfigUpdated("platformCreationFeePercentage", newPct);
     }
 
     function updateDefaultLimits(uint256 _maxMintsPerUser) external isAdmin {
         if (!(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100)) {
-            revert InvalidLimit();
+            revert EventFactory__InvalidLimit();
         }
         defaultMaxMintsPerUser = _maxMintsPerUser;
         emit ConfigUpdated("defaultMaxMintsPerUser", _maxMintsPerUser);
@@ -221,7 +221,7 @@ contract EventFactory is Ownable {
 
     function updateMinEventSetupTime(uint256 _minTime) external isAdmin {
         if (!(_minTime >= 1 hours && _minTime <= 30 days)) {
-            revert InvalidSetupTime();
+            revert EventFactory__InvalidSetupTime();
         }
         minEventSetupTime = _minTime;
         emit ConfigUpdated("minEventSetupTime", _minTime);
@@ -237,11 +237,11 @@ contract EventFactory is Ownable {
             (bool success,) = I_PLATFORM_ADDRESS.call{value: platformFee}("");
             // Using a more specific error than DeploymentFailed would be ideal,
             // but this prevents the transaction from silently failing.
-            if (!success) revert DeploymentFailed();
+            if (!success) revert EventFactory__DeploymentFailed();
         }
         if (remainder > 0) {
             (bool success,) = owner().call{value: remainder}("");
-            if (!success) revert DeploymentFailed();
+            if (!success) revert EventFactory__DeploymentFailed();
         }
     }
 
