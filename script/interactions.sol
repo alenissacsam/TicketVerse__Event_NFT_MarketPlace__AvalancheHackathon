@@ -18,7 +18,7 @@ contract UserVerificationInteraction is Script {
         console.log("UserVerification contract address:", address(userVerification));
 
         // 2. Check the owner of the contract. The owner should be verified by the constructor.
-        address owner = userVerification.owner();
+        address owner = userVerification.I_OWNER();
         console.log("Contract owner:", owner);
         console.log("Is owner verified?", userVerification.isVerified(owner));
 
