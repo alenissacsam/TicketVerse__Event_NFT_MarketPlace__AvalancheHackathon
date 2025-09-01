@@ -9,7 +9,7 @@ import {UserVerification} from "./UserVerification.sol";
 import "./MarketPlaceStructAndVariables.sol";
 
 /**
- * @title TicketMarketplace 
+ * @title TicketMarketplace
  * @author alenissacsam (Enhanced by AI)
  * @dev NFT mint payments count as deposits, users can withdraw up to total deposits
  */
@@ -627,9 +627,11 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
      * @dev Mark event as ended and enable profit collection
      */
 
-    function markEventEnded(address eventContract) external onlyOwner {
-        if (eventInfo[eventContract].eventEnded) revert Marketplace__EventAlreadyEnded();
-        if (_getEventCancellationStatus(eventContract)) revert Marketplace__EventNotCancelled();
+    function markEventEnded(address eventContract) external isAdmin {
+        if (eventInfo[eventContract].eventEnded)
+            revert Marketplace__EventAlreadyEnded();
+        if (_getEventCancellationStatus(eventContract))
+            revert Marketplace__EventNotCancelled();
 
         eventInfo[eventContract].eventEnded = true;
 
@@ -643,11 +645,14 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
     function collectProfits(
         address eventContract
     ) external nonReentrant onlyVerifiedUser {
-        if (!eventInfo[eventContract].eventEnded) revert Marketplace__EventNotEnded();
-        if (eventInfo[eventContract].emergencyRefund) revert Marketplace__EmergencyRefundActive();
+        if (!eventInfo[eventContract].eventEnded)
+            revert Marketplace__EventNotEnded();
+        if (eventInfo[eventContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundActive();
 
         UserBalance storage balance = userBalances[msg.sender][eventContract];
-        if (balance.lockedBalance == 0) revert Marketplace__NoProfitsToCollect();
+        if (balance.lockedBalance == 0)
+            revert Marketplace__NoProfitsToCollect();
         uint256 lockedAmount = balance.lockedBalance;
         balance.lockedBalance = 0;
 
@@ -667,9 +672,11 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
      * @dev Enable emergency refunds for cancelled event
      */
 
-    function enableEmergencyRefund(address eventContract) external onlyOwner {
-        if (!_getEventCancellationStatus(eventContract)) revert Marketplace__EventNotCancelled();
-        if (eventInfo[eventContract].emergencyRefund) revert Marketplace__EmergencyRefundActive();
+    function enableEmergencyRefund(address eventContract) external isAdmin {
+        if (!_getEventCancellationStatus(eventContract))
+            revert Marketplace__EventNotCancelled();
+        if (eventInfo[eventContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundActive();
         eventInfo[eventContract].emergencyRefund = true;
 
         emit EmergencyRefundEnabled(eventContract);
@@ -679,7 +686,8 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
      * @dev Claim emergency refund (full original deposit, no fees)
      */
     function claimEmergencyRefund(address eventContract) external nonReentrant {
-        if (!eventInfo[eventContract].emergencyRefund) revert Marketplace__EmergencyRefundNotEnabled();
+        if (!eventInfo[eventContract].emergencyRefund)
+            revert Marketplace__EmergencyRefundNotEnabled();
 
         EventInfo storage info = eventInfo[eventContract];
         UserBalance storage balance = userBalances[msg.sender][eventContract];
@@ -688,7 +696,6 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         uint256 refundAmount = info.userOriginalDeposits[msg.sender] +
             balance.lockedBalance;
         if (refundAmount == 0) revert Marketplace__NoDepositsToRefund();
-
 
         // Clear user's deposits and balance for this event
         info.userOriginalDeposits[msg.sender] = 0;
@@ -707,7 +714,8 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address eventContract,
         address payable recipient
     ) external nonReentrant {
-        if (!eventInfo[eventContract].eventEnded) revert Marketplace__EventNotEnded();
+        if (!eventInfo[eventContract].eventEnded)
+            revert Marketplace__EventNotEnded();
         uint256 amount = royaltiesPayable[eventContract][recipient];
         if (amount == 0) revert Marketplace__NoRoyaltiesToWithdraw();
 
@@ -721,8 +729,10 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
      * @dev Allows the platform to withdraw its fees for an event.
      */
     function withdrawPlatformFees(address eventContract) external nonReentrant {
-        if (msg.sender != PLATFORM_ADDRESS && msg.sender != owner()) revert Marketplace__NotAuthorized();
-        if (!eventInfo[eventContract].eventEnded) revert Marketplace__EventNotEnded();
+        if (msg.sender != PLATFORM_ADDRESS && msg.sender != owner())
+            revert Marketplace__NotAuthorized();
+        if (!eventInfo[eventContract].eventEnded)
+            revert Marketplace__EventNotEnded();
         uint256 amount = platformFeesPayable[eventContract];
         if (amount == 0) revert Marketplace__NoPlatformFeesToWithdraw();
 
@@ -774,9 +784,13 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         address tokenContract,
         uint256 tokenId
     ) internal view {
-        if (IERC721(tokenContract).ownerOf(tokenId) != msg.sender) revert Marketplace__NotTokenOwner();
-        if (!IERC721(tokenContract).isApprovedForAll(msg.sender, address(this)) &&
-            IERC721(tokenContract).getApproved(tokenId) != address(this)
+        if (IERC721(tokenContract).ownerOf(tokenId) != msg.sender)
+            revert Marketplace__NotTokenOwner();
+        if (
+            !IERC721(tokenContract).isApprovedForAll(
+                msg.sender,
+                address(this)
+            ) && IERC721(tokenContract).getApproved(tokenId) != address(this)
         ) revert Marketplace__NotApproved();
     }
 
@@ -790,21 +804,23 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
         if (lastPrice > 0) {
             uint256 maxAllowedPrice = lastPrice +
                 ((lastPrice * PRICE_INCREASE_LIMIT) / BASIS_POINTS);
-            if (newPrice > maxAllowedPrice) revert Marketplace__PriceIncreaseTooHigh();
+            if (newPrice > maxAllowedPrice)
+                revert Marketplace__PriceIncreaseTooHigh();
         } else {
             uint256 mintPrice = _getMintPrice(tokenContract);
             if (mintPrice > 0) {
                 uint256 maxAllowedPrice = mintPrice +
                     ((mintPrice * PRICE_INCREASE_LIMIT) / BASIS_POINTS);
-                if (newPrice > maxAllowedPrice) revert Marketplace__PriceIncreaseTooHigh();
+                if (newPrice > maxAllowedPrice)
+                    revert Marketplace__PriceIncreaseTooHigh();
             }
         }
     }
 
     function _checkResaleCooldown(bytes32 listingId) internal view {
         uint256 lastSale = lastSaleTime[listingId];
-        if (lastSale != 0 && block.timestamp < lastSale + RESALE_COOLDOWN) revert Marketplace__ResaleCooldownActive();
-
+        if (lastSale != 0 && block.timestamp < lastSale + RESALE_COOLDOWN)
+            revert Marketplace__ResaleCooldownActive();
     }
 
     function _refundAllBidders(
@@ -958,17 +974,18 @@ contract TicketMarketplace is ReentrancyGuard, Ownable {
                             OWNER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function updatePlatformFee(uint256 newFeePercent) external onlyOwner {
-        if (newFeePercent > 1000) revert Marketplace__InvalidFeePercentage(newFeePercent, 1000);
+    function updatePlatformFee(uint256 newFeePercent) external isAdmin {
+        if (newFeePercent > 1000)
+            revert Marketplace__InvalidFeePercentage(newFeePercent, 1000);
         platformFeePercent = newFeePercent;
     }
 
-    function setPaused(bool _paused) external onlyOwner {
+    function setPaused(bool _paused) external isAdmin {
         paused = _paused;
         emit MarketplacePaused(_paused);
     }
 
-    function emergencyWithdraw() external onlyOwner {
+    function emergencyWithdraw() external isAdmin {
         payable(owner()).transfer(address(this).balance);
     }
 }

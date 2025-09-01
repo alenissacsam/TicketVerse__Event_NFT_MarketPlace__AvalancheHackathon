@@ -1,5 +1,10 @@
 include .env
 
+install:
+	@forge install cyfrin/foundry-devops
+	@forge install smartcontractkit/chainlink-brownie-contracts
+	@forge install openzeppelin/openzeppelin-contracts
+
 deploy-Avalanche:
 	@forge script script/DeployAll.s.sol:DeployAll \
 	--rpc-url $(AVAX_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify \

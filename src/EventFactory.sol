@@ -42,7 +42,10 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    event EventCreated(address indexed organizer, address indexed eventContract);
+    event EventCreated(
+        address indexed organizer,
+        address indexed eventContract
+    );
     event OrganizerAuthorized(address indexed organizer, bool authorized);
     event ConfigUpdated(bytes32 key, uint256 value);
 
@@ -59,8 +62,13 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-    constructor(address _platformAddress, address _userVerifierAddress) Ownable(msg.sender) {
-        if (_platformAddress == address(0) || _userVerifierAddress == address(0)) revert ZeroAddress();
+    constructor(
+        address _platformAddress,
+        address _userVerifierAddress
+    ) Ownable(msg.sender) {
+        if (
+            _platformAddress == address(0) || _userVerifierAddress == address(0)
+        ) revert ZeroAddress();
         I_PLATFORM_ADDRESS = _platformAddress;
         I_USER_VERFIER_ADDRESS = _userVerifierAddress;
 
@@ -85,11 +93,11 @@ contract EventFactory is Ownable {
         string symbol;
         uint256 maxSupply;
         uint256 baseMintPrice;
-        uint256 organizerPercentage;   // bps
-        uint256 royaltyFeePercentage;  // bps
+        uint256 organizerPercentage; // bps
+        uint256 royaltyFeePercentage; // bps
         uint256 eventStartTime;
         uint256 eventEndTime;
-        uint256 maxMintsPerUser;       // if 0, factory uses defaultMaxMintsPerUser
+        uint256 maxMintsPerUser; // if 0, factory uses defaultMaxMintsPerUser
         VIPConfig vipConfig;
         uint256 vipMintPrice;
         bool waitlistEnabled;
@@ -97,26 +105,26 @@ contract EventFactory is Ownable {
         address[] initialWhitelist;
         string venue;
         string eventDescription;
-
         // If your EventTicket supports these additional params (from your extended version),
         // keep them; otherwise remove.
-        uint256 seatCount;             // optional: must equal maxSupply in EventTicket
-        string vipTokenURIBase;        // optional: base URI for VIP seats
-        string nonVipTokenURIBase;     // optional: base URI for regular seats
+        uint256 seatCount; // optional: must equal maxSupply in EventTicket
+        string vipTokenURIBase; // optional: base URI for VIP seats
+        string nonVipTokenURIBase; // optional: base URI for regular seats
     }
-    function addMarketplaceAddress(address _marketplace) public onlyOwner {
+
+    function addMarketplaceAddress(address _marketplace) public isAdmin {
         _marketplaceAddress = _marketplace;
     }
-    function createEvent(CreateEventParams calldata p)
-        external
-        payable
-        onlyAuthorizedOrganizer
-        returns (address deployed)
-    {
+
+    function createEvent(
+        CreateEventParams calldata p
+    ) external payable onlyAuthorizedOrganizer returns (address deployed) {
         if (msg.value < eventCreationFee) revert InsufficientCreationFee();
 
         // Delegate detailed validation to EventTicket constructor to save factory bytecode.
-        uint256 mintsPerUser = p.maxMintsPerUser > 0 ? p.maxMintsPerUser : defaultMaxMintsPerUser;
+        uint256 mintsPerUser = p.maxMintsPerUser > 0
+            ? p.maxMintsPerUser
+            : defaultMaxMintsPerUser;
 
         // Deploy the event ticket contract
         // Note: Keep the constructor signature aligned with your EventTicket implementation.
@@ -125,7 +133,7 @@ contract EventFactory is Ownable {
             p.symbol,
             p.maxSupply,
             p.baseMintPrice,
-            msg.sender,                // organizer
+            msg.sender, // organizer
             I_PLATFORM_ADDRESS,
             p.organizerPercentage,
             I_USER_VERFIER_ADDRESS,
@@ -171,7 +179,10 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                            AUTHORIZATION
     //////////////////////////////////////////////////////////////*/
-    function setOrganizerAuthorization(address organizer, bool authorized) external onlyOwner {
+    function setOrganizerAuthorization(
+        address organizer,
+        bool authorized
+    ) external isAdmin {
         authorizedOrganizers[organizer] = authorized;
         emit OrganizerAuthorized(organizer, authorized);
     }
@@ -183,7 +194,9 @@ contract EventFactory is Ownable {
         return _deployedEvents;
     }
 
-    function getAllOrganizerEvents(address organizer) external view returns (address[] memory) {
+    function getAllOrganizerEvents(
+        address organizer
+    ) external view returns (address[] memory) {
         return _organizerEvents[organizer];
     }
 
@@ -191,33 +204,37 @@ contract EventFactory is Ownable {
         return _deployedEvents.length;
     }
 
-    function getOrganizerEventCount(address organizer) external view returns (uint256) {
+    function getOrganizerEventCount(
+        address organizer
+    ) external view returns (uint256) {
         return _organizerEvents[organizer].length;
     }
 
     /*//////////////////////////////////////////////////////////////
                               CONFIG SETTERS
     //////////////////////////////////////////////////////////////*/
-    function updateCreationFee(uint256 newFee) external onlyOwner {
+    function updateCreationFee(uint256 newFee) external isAdmin {
         if (newFee > 1 ether) revert FeeTooHigh();
         eventCreationFee = newFee;
         emit ConfigUpdated("eventCreationFee", newFee);
     }
 
-    function updatePlatformFeePercentage(uint256 newPct) external onlyOwner {
+    function updatePlatformFeePercentage(uint256 newPct) external isAdmin {
         if (newPct > 1000) revert PercentageTooHigh(); // Max 10%
         platformCreationFeePercentage = newPct;
         emit ConfigUpdated("platformCreationFeePercentage", newPct);
     }
 
-    function updateDefaultLimits(uint256 _maxMintsPerUser) external onlyOwner {
-        if (!(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100)) revert InvalidLimit();
+    function updateDefaultLimits(uint256 _maxMintsPerUser) external isAdmin {
+        if (!(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100))
+            revert InvalidLimit();
         defaultMaxMintsPerUser = _maxMintsPerUser;
         emit ConfigUpdated("defaultMaxMintsPerUser", _maxMintsPerUser);
     }
 
-    function updateMinEventSetupTime(uint256 _minTime) external onlyOwner {
-        if (!(_minTime >= 1 hours && _minTime <= 30 days)) revert InvalidSetupTime();
+    function updateMinEventSetupTime(uint256 _minTime) external isAdmin {
+        if (!(_minTime >= 1 hours && _minTime <= 30 days))
+            revert InvalidSetupTime();
         minEventSetupTime = _minTime;
         emit ConfigUpdated("minEventSetupTime", _minTime);
     }
@@ -243,7 +260,7 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                                EMERGENCY
     //////////////////////////////////////////////////////////////*/
-    function emergencyWithdraw() external onlyOwner {
+    function emergencyWithdraw() external isAdmin {
         payable(owner()).transfer(address(this).balance);
     }
 }
