@@ -13,7 +13,7 @@ import {MarketPlaceErrorsEnumsAndStruct} from "./Interface/IMarketPlaceErrorsEnu
  * @author alenissacsam (Enhanced by AI)
  * @dev NFT mint payments count as deposits, users can withdraw up to total deposits
  */
-contract TicketMarketplace is ReentrancyGuard, Ownable, MarketPlaceErrorsEnumsAndStruct{
+contract TicketMarketplace is ReentrancyGuard, Ownable, MarketPlaceErrorsEnumsAndStruct {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -508,7 +508,7 @@ contract TicketMarketplace is ReentrancyGuard, Ownable, MarketPlaceErrorsEnumsAn
     /**
      * @dev Mark event as ended and enable profit collection
      */
-    function markEventEnded(address eventContract) external isAdmin {
+    function markEventEnded(address eventContract) external onlyOwner {
         if (eventInfo[eventContract].eventEnded) {
             revert Marketplace__EventAlreadyEnded();
         }
@@ -554,7 +554,7 @@ contract TicketMarketplace is ReentrancyGuard, Ownable, MarketPlaceErrorsEnumsAn
     /**
      * @dev Enable emergency refunds for cancelled event
      */
-    function enableEmergencyRefund(address eventContract) external isAdmin {
+    function enableEmergencyRefund(address eventContract) external onlyOwner {
         if (!_getEventCancellationStatus(eventContract)) {
             revert Marketplace__EventNotCancelled();
         }
@@ -801,19 +801,19 @@ contract TicketMarketplace is ReentrancyGuard, Ownable, MarketPlaceErrorsEnumsAn
                             OWNER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function updatePlatformFee(uint256 newFeePercent) external isAdmin {
+    function updatePlatformFee(uint256 newFeePercent) external onlyOwner {
         if (newFeePercent > 1000) {
             revert Marketplace__InvalidFeePercentage(newFeePercent, 1000);
         }
         platformFeePercent = newFeePercent;
     }
 
-    function setPaused(bool _paused) external isAdmin {
+    function setPaused(bool _paused) external onlyOwner {
         paused = _paused;
         emit MarketplacePaused(_paused);
     }
 
-    function emergencyWithdraw() external isAdmin {
+    function emergencyWithdraw() external onlyOwner {
         payable(owner()).transfer(address(this).balance);
     }
 }

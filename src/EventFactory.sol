@@ -104,7 +104,7 @@ contract EventFactory is Ownable {
         string nonVipTokenURIBase; // optional: base URI for regular seats
     }
 
-    function addMarketplaceAddress(address _marketplace) public isAdmin {
+    function addMarketplaceAddress(address _marketplace) public onlyOwner {
         _marketplaceAddress = _marketplace;
     }
 
@@ -172,7 +172,7 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                            AUTHORIZATION
     //////////////////////////////////////////////////////////////*/
-    function setOrganizerAuthorization(address organizer, bool authorized) external isAdmin {
+    function setOrganizerAuthorization(address organizer, bool authorized) external onlyOwner {
         authorizedOrganizers[organizer] = authorized;
         emit OrganizerAuthorized(organizer, authorized);
     }
@@ -199,19 +199,19 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                               CONFIG SETTERS
     //////////////////////////////////////////////////////////////*/
-    function updateCreationFee(uint256 newFee) external isAdmin {
+    function updateCreationFee(uint256 newFee) external onlyOwner {
         if (newFee > 1 ether) revert EventFactory__FeeTooHigh();
         eventCreationFee = newFee;
         emit ConfigUpdated("eventCreationFee", newFee);
     }
 
-    function updatePlatformFeePercentage(uint256 newPct) external isAdmin {
+    function updatePlatformFeePercentage(uint256 newPct) external onlyOwner {
         if (newPct > 1000) revert EventFactory__PercentageTooHigh(); // Max 10%
         platformCreationFeePercentage = newPct;
         emit ConfigUpdated("platformCreationFeePercentage", newPct);
     }
 
-    function updateDefaultLimits(uint256 _maxMintsPerUser) external isAdmin {
+    function updateDefaultLimits(uint256 _maxMintsPerUser) external onlyOwner {
         if (!(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100)) {
             revert EventFactory__InvalidLimit();
         }
@@ -219,7 +219,7 @@ contract EventFactory is Ownable {
         emit ConfigUpdated("defaultMaxMintsPerUser", _maxMintsPerUser);
     }
 
-    function updateMinEventSetupTime(uint256 _minTime) external isAdmin {
+    function updateMinEventSetupTime(uint256 _minTime) external onlyOwner {
         if (!(_minTime >= 1 hours && _minTime <= 30 days)) {
             revert EventFactory__InvalidSetupTime();
         }
@@ -248,7 +248,7 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                                EMERGENCY
     //////////////////////////////////////////////////////////////*/
-    function emergencyWithdraw() external isAdmin {
+    function emergencyWithdraw() external onlyOwner {
         payable(owner()).transfer(address(this).balance);
     }
 }

@@ -355,7 +355,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         return basePrice;
     }
 
-    function setSeatPrices(uint256[] calldata seatNumbers, uint256[] calldata prices) external isAdmin {
+    function setSeatPrices(uint256[] calldata seatNumbers, uint256[] calldata prices) external onlyOwner {
         require(seatNumbers.length == prices.length, "Arrays length mismatch");
         for (uint256 i = 0; i < seatNumbers.length; i++) {
             uint256 s = seatNumbers[i];
@@ -444,7 +444,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         emit EventCancelled(block.timestamp, reason);
     }
 
-    function updateVIPConfig(VIPConfig memory newConfig) external isAdmin onlyBeforeEvent {
+    function updateVIPConfig(VIPConfig memory newConfig) external onlyOwner onlyBeforeEvent {
         if (newConfig.vipEnabled) {
             require(newConfig.vipSeatStart >= 1, "VIP start invalid");
             require(newConfig.vipSeatEnd >= newConfig.vipSeatStart, "VIP range invalid");
@@ -458,7 +458,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         emit VIPConfigUpdated(newConfig);
     }
 
-    function updateVipMintPrice(uint256 _newVipPrice) external isAdmin onlyBeforeEvent {
+    function updateVipMintPrice(uint256 _newVipPrice) external onlyOwner onlyBeforeEvent {
         vipMintPrice = _newVipPrice;
         emit VIPPriceUpdated(_newVipPrice);
     }
@@ -472,7 +472,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         emit MarketplaceUsageTracked(user, tokenId);
     }
 
-    function setMarketplaceAddress(address _marketplace) external isAdmin {
+    function setMarketplaceAddress(address _marketplace) external onlyOwner {
         marketplaceAddress = _marketplace;
     }
 
@@ -490,7 +490,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         return string(abi.encodePacked(isVIP ? baseVipTokenURI : baseNonVipTokenURI, _toString(seatNumber)));
     }
 
-    function addMarketPlaceAddress(address _marketplace) external isAdmin {
+    function addMarketPlaceAddress(address _marketplace) external onlyOwner {
         marketplaceAddress = _marketplace;
     }
 
