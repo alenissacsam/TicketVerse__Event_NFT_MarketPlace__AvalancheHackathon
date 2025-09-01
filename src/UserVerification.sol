@@ -9,8 +9,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
  * @author alenissacsam (Enhanced by AI)
  * @dev Enhanced user verification with all logic errors fixed
  */
-contract UserVerification is UserVerificationErrorsAndEnums{
-
+contract UserVerification is UserVerificationErrorsAndEnums {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /*//////////////////////////////////////////////////////////////
@@ -47,28 +46,11 @@ contract UserVerification is UserVerificationErrorsAndEnums{
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    event UserVerified(
-        address indexed user,
-        uint256 timestamp,
-        VerificationLevel level,
-        uint256 expiryTime
-    );
-    event UserLevelUpgraded(
-        address indexed user,
-        VerificationLevel oldLevel,
-        VerificationLevel newLevel
-    );
-    event UserLevelDowngraded(
-        address indexed user,
-        VerificationLevel oldLevel,
-        VerificationLevel newLevel
-    );
+    event UserVerified(address indexed user, uint256 timestamp, VerificationLevel level, uint256 expiryTime);
+    event UserLevelUpgraded(address indexed user, VerificationLevel oldLevel, VerificationLevel newLevel);
+    event UserLevelDowngraded(address indexed user, VerificationLevel oldLevel, VerificationLevel newLevel);
     event UserRevoked(address indexed user, uint256 timestamp);
-    event UserSuspended(
-        address indexed user,
-        uint256 endTime,
-        SuspensionReason reason
-    );
+    event UserSuspended(address indexed user, uint256 endTime, SuspensionReason reason);
     event UserUnsuspended(address indexed user, uint256 timestamp);
     event UserMetadataUpdated(address indexed user, string metadata);
     event VerificationExpired(address indexed user, uint256 timestamp);
@@ -93,14 +75,15 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         _;
     }
 
-    modifier isAdmin(){
-        if(verificationLevel[msg.sender] != VerificationLevel.Admin){
+    modifier isAdmin() {
+        if (verificationLevel[msg.sender] != VerificationLevel.Admin) {
             revert UserVerification__InsufficientLevel(msg.sender, VerificationLevel.Admin);
         }
         _;
     }
-    modifier isOwner(){
-        if(msg.sender != I_OWNER){
+
+    modifier isOwner() {
+        if (msg.sender != I_OWNER) {
             revert UserVerification__NotOwner();
         }
         _;
@@ -122,29 +105,22 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         _verifyUserWithLevel(user, "", VerificationLevel.Basic);
     }
 
-    function verifyUserWithMetadata(
-        address user,
-        string memory metadata,
-        uint256 customDuration
-    ) external isAdmin {
+    function verifyUserWithMetadata(address user, string memory metadata, uint256 customDuration) external isAdmin {
         _verifyUserWithLevel(user, metadata, VerificationLevel.Basic);
         if (customDuration > 0 && customDuration != verificationDuration) {
             verificationExpiry[user] = block.timestamp + customDuration;
         }
     }
 
-    function verifyUserWithLevel(
-        address user,
-        string memory metadata,
-        VerificationLevel level
-    ) external isAdmin validLevel(level) {
+    function verifyUserWithLevel(address user, string memory metadata, VerificationLevel level)
+        external
+        isAdmin
+        validLevel(level)
+    {
         _verifyUserWithLevel(user, metadata, level);
     }
 
-    function batchVerifyUsers(
-        address[] calldata users,
-        VerificationLevel level
-    ) external isAdmin validLevel(level) {
+    function batchVerifyUsers(address[] calldata users, VerificationLevel level) external isAdmin validLevel(level) {
         if (users.length > maxBatchSize) {
             revert UserVerification__InvalidBatchSize();
         }
@@ -160,21 +136,17 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         emit BatchVerificationCompleted(successCount, block.timestamp);
     }
 
-    function batchVerifyUsersWithLevels(
-        address[] calldata users,
-        VerificationLevel[] calldata levels
-    ) external isAdmin {
+    function batchVerifyUsersWithLevels(address[] calldata users, VerificationLevel[] calldata levels)
+        external
+        isAdmin
+    {
         if (users.length != levels.length || users.length > maxBatchSize) {
             revert UserVerification__InvalidBatchSize();
         }
 
         uint256 successCount = 0;
         for (uint256 i = 0; i < users.length; i++) {
-            if (
-                levels[i] <= VerificationLevel.Admin &&
-                !_verifiedUsers.contains(users[i]) &&
-                !isSuspended[users[i]]
-            ) {
+            if (levels[i] <= VerificationLevel.Admin && !_verifiedUsers.contains(users[i]) && !isSuspended[users[i]]) {
                 _verifyUserWithLevel(users[i], "", levels[i]);
                 successCount++;
             }
@@ -187,11 +159,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
                             SUSPENSION FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function suspendUser(
-        address user,
-        uint256 duration,
-        SuspensionReason reason
-    ) external isAdmin {
+    function suspendUser(address user, uint256 duration, SuspensionReason reason) external isAdmin {
         if (!_verifiedUsers.contains(user)) {
             revert UserVerification__UserNotVerified(user);
         }
@@ -223,10 +191,12 @@ contract UserVerification is UserVerificationErrorsAndEnums{
                             LEVEL MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
-    function upgradeUserLevel(
-        address user,
-        VerificationLevel newLevel
-    ) external isAdmin validLevel(newLevel) notSuspended(user) {
+    function upgradeUserLevel(address user, VerificationLevel newLevel)
+        external
+        isAdmin
+        validLevel(newLevel)
+        notSuspended(user)
+    {
         if (!_verifiedUsers.contains(user)) {
             revert UserVerification__UserNotVerified(user);
         }
@@ -246,10 +216,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         emit UserLevelUpgraded(user, oldLevel, newLevel);
     }
 
-    function downgradeUserLevel(
-        address user,
-        VerificationLevel newLevel
-    ) external isAdmin validLevel(newLevel) {
+    function downgradeUserLevel(address user, VerificationLevel newLevel) external isAdmin validLevel(newLevel) {
         if (!_verifiedUsers.contains(user)) {
             revert UserVerification__UserNotVerified(user);
         }
@@ -270,10 +237,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
                             RENEWAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function renewVerification(
-        address user,
-        uint256 additionalDuration
-    ) external isAdmin notSuspended(user) {
+    function renewVerification(address user, uint256 additionalDuration) external isAdmin notSuspended(user) {
         if (!_verifiedUsers.contains(user)) {
             revert UserVerification__UserNotVerified(user);
         }
@@ -283,22 +247,10 @@ contract UserVerification is UserVerificationErrorsAndEnums{
 
         if (_isVerificationExpired(user)) {
             // If expired, start from current time
-            newExpiry =
-                block.timestamp +
-                (
-                    additionalDuration > 0
-                        ? additionalDuration
-                        : verificationDuration
-                );
+            newExpiry = block.timestamp + (additionalDuration > 0 ? additionalDuration : verificationDuration);
         } else {
             // If not expired, extend from current expiry
-            newExpiry =
-                currentExpiry +
-                (
-                    additionalDuration > 0
-                        ? additionalDuration
-                        : verificationDuration
-                );
+            newExpiry = currentExpiry + (additionalDuration > 0 ? additionalDuration : verificationDuration);
         }
 
         verificationExpiry[user] = newExpiry;
@@ -328,10 +280,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         emit UserRevoked(user, block.timestamp);
     }
 
-    function updateUserMetadata(
-        address user,
-        string memory metadata
-    ) external isAdmin notSuspended(user) {
+    function updateUserMetadata(address user, string memory metadata) external isAdmin notSuspended(user) {
         if (!_verifiedUsers.contains(user)) {
             revert UserVerification__UserNotVerified(user);
         }
@@ -343,14 +292,9 @@ contract UserVerification is UserVerificationErrorsAndEnums{
     /**
      * @dev FIXED: Automatic expiration with proper cleanup
      */
-    function expireOldVerifications(
-        address[] calldata users
-    ) external isAdmin {
+    function expireOldVerifications(address[] calldata users) external isAdmin {
         for (uint256 i = 0; i < users.length; i++) {
-            if (
-                _verifiedUsers.contains(users[i]) &&
-                _isVerificationExpired(users[i])
-            ) {
+            if (_verifiedUsers.contains(users[i]) && _isVerificationExpired(users[i])) {
                 _expireUser(users[i]);
             }
         }
@@ -360,7 +304,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
                         CONFIGURATION FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function setVerificationDuration(uint256 _duration) external isOwner{
+    function setVerificationDuration(uint256 _duration) external isOwner {
         if (_duration < 30 days || _duration > 5 * 365 days) {
             revert UserVerification__InvalidDuration();
         }
@@ -368,7 +312,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         emit ConfigurationUpdated("verificationDuration", _duration);
     }
 
-    function setMaxBatchSize(uint256 _size) external isOwner{
+    function setMaxBatchSize(uint256 _size) external isOwner {
         if (_size < 10 || _size > 1000) {
             revert UserVerification__InvalidMaxBatchSize();
         }
@@ -376,7 +320,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         emit ConfigurationUpdated("maxBatchSize", _size);
     }
 
-    function setMaxVerificationAttempts(uint256 _attempts) external isOwner{
+    function setMaxVerificationAttempts(uint256 _attempts) external isOwner {
         if (_attempts < 1 || _attempts > 10) {
             revert UserVerification__InvalidMaxAttempts();
         }
@@ -384,7 +328,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         emit ConfigurationUpdated("maxVerificationAttempts", _attempts);
     }
 
-    function setVerificationCooldown(uint256 _cooldown) external isOwner{
+    function setVerificationCooldown(uint256 _cooldown) external isOwner {
         if (_cooldown < 1 hours || _cooldown > 7 days) {
             revert UserVerification__InvalidCooldown();
         }
@@ -397,30 +341,19 @@ contract UserVerification is UserVerificationErrorsAndEnums{
     //////////////////////////////////////////////////////////////*/
 
     function isVerifiedAndActive(address user) external view returns (bool) {
-        return
-            _verifiedUsers.contains(user) &&
-            !_isUserSuspended(user) &&
-            !_isVerificationExpired(user);
+        return _verifiedUsers.contains(user) && !_isUserSuspended(user) && !_isVerificationExpired(user);
     }
 
     function isVerified(address user) external view returns (bool) {
         return _verifiedUsers.contains(user);
     }
 
-    function hasMinimumLevel(
-        address user,
-        VerificationLevel minLevel
-    ) external view returns (bool) {
-        return
-            _verifiedUsers.contains(user) &&
-            !_isUserSuspended(user) &&
-            !_isVerificationExpired(user) &&
-            verificationLevel[user] >= minLevel;
+    function hasMinimumLevel(address user, VerificationLevel minLevel) external view returns (bool) {
+        return _verifiedUsers.contains(user) && !_isUserSuspended(user) && !_isVerificationExpired(user)
+            && verificationLevel[user] >= minLevel;
     }
 
-    function getUserStatus(
-        address user
-    )
+    function getUserStatus(address user)
         external
         view
         returns (
@@ -476,10 +409,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         levelDistribution[4] = levelCounts[VerificationLevel.Admin];
     }
 
-    function getUsersByLevel(
-        VerificationLevel level,
-        bool onlyActive
-    ) external view returns (address[] memory) {
+    function getUsersByLevel(VerificationLevel level, bool onlyActive) external view returns (address[] memory) {
         uint256 totalVerified = _verifiedUsers.length();
 
         // First pass: count matching users
@@ -487,10 +417,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         for (uint256 i = 0; i < totalVerified; i++) {
             address user = _verifiedUsers.at(i);
             if (verificationLevel[user] == level) {
-                if (
-                    !onlyActive ||
-                    (!_isUserSuspended(user) && !_isVerificationExpired(user))
-                ) {
+                if (!onlyActive || (!_isUserSuspended(user) && !_isVerificationExpired(user))) {
                     count++;
                 }
             }
@@ -502,10 +429,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         for (uint256 i = 0; i < totalVerified; i++) {
             address user = _verifiedUsers.at(i);
             if (verificationLevel[user] == level) {
-                if (
-                    !onlyActive ||
-                    (!_isUserSuspended(user) && !_isVerificationExpired(user))
-                ) {
+                if (!onlyActive || (!_isUserSuspended(user) && !_isVerificationExpired(user))) {
                     result[index] = user;
                     index++;
                 }
@@ -515,11 +439,11 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         return result;
     }
 
-    function getVerifiedUsers(
-        uint256 offset,
-        uint256 limit,
-        bool onlyActive
-    ) external view returns (address[] memory) {
+    function getVerifiedUsers(uint256 offset, uint256 limit, bool onlyActive)
+        external
+        view
+        returns (address[] memory)
+    {
         uint256 count = _verifiedUsers.length();
         if (offset >= count) {
             revert UserVerification__OffsetOutOfBounds();
@@ -558,9 +482,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
     }
 
     // Compatibility functions
-    function getUserLevel(
-        address user
-    ) external view returns (VerificationLevel) {
+    function getUserLevel(address user) external view returns (VerificationLevel) {
         return verificationLevel[user];
     }
 
@@ -568,9 +490,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         return verificationTime[user];
     }
 
-    function getUserMetadata(
-        address user
-    ) external view returns (string memory) {
+    function getUserMetadata(address user) external view returns (string memory) {
         return userMetadata[user];
     }
 
@@ -578,13 +498,8 @@ contract UserVerification is UserVerificationErrorsAndEnums{
         return _verifiedUsers.length();
     }
 
-    function wasVerifiedBefore(
-        address user,
-        uint256 timestamp
-    ) external view returns (bool) {
-        return
-            _verifiedUsers.contains(user) &&
-            verificationTime[user] <= timestamp;
+    function wasVerifiedBefore(address user, uint256 timestamp) external view returns (bool) {
+        return _verifiedUsers.contains(user) && verificationTime[user] <= timestamp;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -594,16 +509,9 @@ contract UserVerification is UserVerificationErrorsAndEnums{
     /**
      * @dev FIXED: Rate limiting with proper error handling
      */
-    function _verifyUserWithLevel(
-        address user,
-        string memory metadata,
-        VerificationLevel level
-    ) internal {
+    function _verifyUserWithLevel(address user, string memory metadata, VerificationLevel level) internal {
         // FIXED: Rate limiting with custom error instead of string revert
-        if (
-            lastVerificationAttempt[user] + verificationCooldown >
-            block.timestamp
-        ) {
+        if (lastVerificationAttempt[user] + verificationCooldown > block.timestamp) {
             if (verificationAttempts[user] >= maxVerificationAttempts) {
                 revert UserVerification__RateLimitExceeded(user);
             }
@@ -630,12 +538,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
             emit UserMetadataUpdated(user, metadata);
         }
 
-        emit UserVerified(
-            user,
-            block.timestamp,
-            level,
-            verificationExpiry[user]
-        );
+        emit UserVerified(user, block.timestamp, level, verificationExpiry[user]);
     }
 
     /**
@@ -659,10 +562,7 @@ contract UserVerification is UserVerificationErrorsAndEnums{
     /**
      * @dev FIXED: Atomic level count updates
      */
-    function _updateLevelCounts(
-        VerificationLevel oldLevel,
-        VerificationLevel newLevel
-    ) internal {
+    function _updateLevelCounts(VerificationLevel oldLevel, VerificationLevel newLevel) internal {
         if (levelCounts[oldLevel] > 0) {
             levelCounts[oldLevel]--;
         }

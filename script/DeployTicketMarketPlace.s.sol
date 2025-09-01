@@ -6,11 +6,10 @@ import {TicketMarketplace} from "../src/TicketMarketplace.sol";
 import {Script} from "forge-std/Script.sol";
 
 contract DeployTicketMarketPlace is Script {
-    function run(
-        address _platformAddress,
-        uint256 _platformFeePercent,
-        address _userVerifierAddress
-    ) external returns (address ticketMarketplaceAddress) {
+    function run(address _platformAddress, uint256 _platformFeePercent, address _userVerifierAddress)
+        external
+        returns (address ticketMarketplaceAddress)
+    {
         vm.startBroadcast();
 
         TicketMarketplace ticketMarketplace = new TicketMarketplace(

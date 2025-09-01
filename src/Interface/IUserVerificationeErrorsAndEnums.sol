@@ -2,8 +2,6 @@
 pragma solidity ^0.8.20;
 
 interface UserVerificationErrorsAndEnums {
-    
-
     /*//////////////////////////////////////////////////////////////
                                 ENUMS
     //////////////////////////////////////////////////////////////*/
@@ -12,7 +10,7 @@ interface UserVerificationErrorsAndEnums {
         Basic,
         Premium,
         VIP,
-        Admin 
+        Admin
     }
 
     enum SuspensionReason {
@@ -32,10 +30,7 @@ interface UserVerificationErrorsAndEnums {
     error UserVerification__UserSuspended(address user);
     error UserVerification__UserNotSuspended(address user);
     error UserVerification__VerificationExpired(address user);
-    error UserVerification__InsufficientLevel(
-        address user,
-        VerificationLevel required
-    );
+    error UserVerification__InsufficientLevel(address user, VerificationLevel required);
     error UserVerification__RateLimitExceeded(address user);
     error UserVerification__NotOwner();
 

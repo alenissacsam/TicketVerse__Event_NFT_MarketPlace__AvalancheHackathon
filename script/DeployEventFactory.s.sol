@@ -10,18 +10,11 @@ import {Script} from "forge-std/Script.sol";
  * @author alenissacsam
  * @dev A script to deploy the EventFactory contract.
  */
-
 contract DeployEventFactory is Script {
-    function run(
-        address _platformAddress,
-        address _verifierAddress
-    ) external returns (address) {
+    function run(address _platformAddress, address _verifierAddress) external returns (address) {
         vm.startBroadcast();
 
-        EventFactory eventFactory = new EventFactory(
-            _platformAddress,
-            _verifierAddress
-        );
+        EventFactory eventFactory = new EventFactory(_platformAddress, _verifierAddress);
 
         vm.stopBroadcast();
         return address(eventFactory);

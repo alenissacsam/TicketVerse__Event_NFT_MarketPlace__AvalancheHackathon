@@ -118,28 +118,13 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
                                    EVENTS
     //////////////////////////////////////////////////////////////*/
     event TicketMinted(
-        address indexed user,
-        uint256 indexed ticketId,
-        uint256 seatNumber,
-        bool isVIP,
-        uint256 pricePaid
+        address indexed user, uint256 indexed ticketId, uint256 seatNumber, bool isVIP, uint256 pricePaid
     );
-    event TicketRefunded(
-        address indexed user,
-        uint256 indexed ticketId,
-        uint256 refundAmount
-    );
-    event TicketUsed(
-        address indexed user,
-        uint256 indexed ticketId,
-        uint256 timestamp
-    );
+    event TicketRefunded(address indexed user, uint256 indexed ticketId, uint256 refundAmount);
+    event TicketUsed(address indexed user, uint256 indexed ticketId, uint256 timestamp);
     event EventCancelled(uint256 timestamp, string reason);
     event EventCompleted(uint256 timestamp);
-    event MarketplaceUsageTracked(
-        address indexed user,
-        uint256 indexed tokenId
-    );
+    event MarketplaceUsageTracked(address indexed user, uint256 indexed tokenId);
     event WaitlistUpdated(address indexed user, bool approved);
     event SeatPriceUpdated(uint256 indexed seatNumber, uint256 newPrice);
     event VIPConfigUpdated(VIPConfig newConfig);
@@ -155,10 +140,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
 
     modifier mintCooldown() {
         if (block.timestamp < lastMintTime[msg.sender] + MINT_COOLDOWN) {
-            revert EventTicket__mintCooldown(
-                msg.sender,
-                lastMintTime[msg.sender]
-            );
+            revert EventTicket__mintCooldown(msg.sender, lastMintTime[msg.sender]);
         }
         _;
     }
@@ -169,20 +151,23 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     modifier eventNotEnded() {
-        if (block.timestamp >= eventEndTime)
+        if (block.timestamp >= eventEndTime) {
             revert EventTicket__EventAlreadyEnded();
+        }
         _;
     }
 
     modifier tokenExists(uint256 tokenId) {
-        if (_ownerOf(tokenId) == address(0))
+        if (_ownerOf(tokenId) == address(0)) {
             revert EventTicket__TokenDoesNotExist();
+        }
         _;
     }
 
     modifier onlyBeforeEvent() {
-        if (block.timestamp >= eventStartTime)
+        if (block.timestamp >= eventStartTime) {
             revert EventTicket__EventNotCancellable();
+        }
         _;
     }
 
@@ -215,44 +200,44 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         string memory _baseNonVipTokenURI
     ) ERC721(name, symbol) Ownable(msg.sender) {
         if (_maxSupply == 0) revert EventTicket__SupplyCannotBeZero();
-        if (_organizerPercentage > 9800 || _royaltyFeePercentage > 1000)
+        if (_organizerPercentage > 9800 || _royaltyFeePercentage > 1000) {
             revert EventTicket__InvalidPercentage(_organizerPercentage);
-        if (
-            _eventOrganizer == address(0) ||
-            _platformAddress == address(0) ||
-            _userVerfierAddress == address(0)
-        ) revert EventTicket__ZeroAddressNotAllowed();
+        }
+        if (_eventOrganizer == address(0) || _platformAddress == address(0) || _userVerfierAddress == address(0)) {
+            revert EventTicket__ZeroAddressNotAllowed();
+        }
 
-        if (_eventStartTime <= block.timestamp + MIN_EVENT_SETUP_TIME)
+        if (_eventStartTime <= block.timestamp + MIN_EVENT_SETUP_TIME) {
             revert EventTicket__InvalidTimeConfiguration();
-        if (_eventEndTime <= _eventStartTime)
+        }
+        if (_eventEndTime <= _eventStartTime) {
             revert EventTicket__InvalidTimeConfiguration();
+        }
 
-        if (
-            _waitlistEnabled &&
-            block.timestamp + _whitelistSaleDuration >= _eventStartTime
-        ) revert EventTicket__InvalidTimeConfiguration();
+        if (_waitlistEnabled && block.timestamp + _whitelistSaleDuration >= _eventStartTime) {
+            revert EventTicket__InvalidTimeConfiguration();
+        }
 
         // seatCount and maxSupply alignment
-        if (_seatCount == 0 || _seatCount != _maxSupply)
+        if (_seatCount == 0 || _seatCount != _maxSupply) {
             revert EventTicket__InvalidTimeConfiguration();
+        }
 
         // VIP range validation when enabled
         if (_vipConfig.vipEnabled) {
             if (
-                _vipConfig.vipSeatStart < 1 ||
-                _vipConfig.vipSeatEnd < _vipConfig.vipSeatStart ||
-                _vipConfig.vipSeatEnd > _seatCount
+                _vipConfig.vipSeatStart < 1 || _vipConfig.vipSeatEnd < _vipConfig.vipSeatStart
+                    || _vipConfig.vipSeatEnd > _seatCount
             ) revert EventTicket__InvalidTimeConfiguration();
 
-            uint256 computedTotal = _vipConfig.vipSeatEnd -
-                _vipConfig.vipSeatStart +
-                1;
-            if (computedTotal != _vipConfig.totalVIPSeats)
+            uint256 computedTotal = _vipConfig.vipSeatEnd - _vipConfig.vipSeatStart + 1;
+            if (computedTotal != _vipConfig.totalVIPSeats) {
                 revert EventTicket__InvalidTimeConfiguration();
+            }
         } else {
-            if (_vipConfig.totalVIPSeats != 0)
+            if (_vipConfig.totalVIPSeats != 0) {
                 revert EventTicket__InvalidTimeConfiguration();
+            }
         }
 
         // Set variables
@@ -292,10 +277,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     /*//////////////////////////////////////////////////////////////
                               MAIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function mintTicket(
-        string memory _eventName,
-        uint256 _seatNumber
-    )
+    function mintTicket(string memory _eventName, uint256 _seatNumber)
         external
         payable
         onlyVerifiedAndActive
@@ -305,31 +287,34 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         nonReentrant
     {
         // seat validation
-        if (_seatNumber < 1 || _seatNumber > seatCount)
+        if (_seatNumber < 1 || _seatNumber > seatCount) {
             revert EventTicket__InvalidSeatNumber();
+        }
         if (seatMinted[_seatNumber]) revert EventTicket__SeatAlreadyTaken();
 
         // supply + per-user mints
         if (nextTicketId >= maxSupply) revert EventTicket__MaxSupplyReached();
-        if (userMintCount[msg.sender] >= maxMintsPerUser)
+        if (userMintCount[msg.sender] >= maxMintsPerUser) {
             revert EventTicket__MintLimitExceeded();
+        }
 
         // whitelist/presale check
         if (block.timestamp < whitelistSaleEndTime) {
-            bool isWhitelisted = waitlistApproved[msg.sender] ||
-                _hasVIPLevel(msg.sender);
+            bool isWhitelisted = waitlistApproved[msg.sender] || _hasVIPLevel(msg.sender);
             if (!isWhitelisted) revert EventTicket__NotOnWhitelist();
         }
 
         // VIP determination
         bool isVIP = _isVIPSeat(_seatNumber);
-        if (isVIP && !vipConfig.vipEnabled)
+        if (isVIP && !vipConfig.vipEnabled) {
             revert EventTicket__VIPSeatNotAvailable();
+        }
 
         // price determination
         uint256 actualPrice = getSeatPrice(_seatNumber, isVIP);
-        if (msg.value < actualPrice)
+        if (msg.value < actualPrice) {
             revert EventTicket__InsufficientPayment(actualPrice, msg.value);
+        }
 
         // Mint and state updates
         uint256 ticketId = nextTicketId++;
@@ -359,32 +344,18 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
             payable(msg.sender).transfer(msg.value - actualPrice);
         }
 
-        emit TicketMinted(
-            msg.sender,
-            ticketId,
-            _seatNumber,
-            isVIP,
-            actualPrice
-        );
+        emit TicketMinted(msg.sender, ticketId, _seatNumber, isVIP, actualPrice);
     }
 
-    function getSeatPrice(
-        uint256 seatNumber,
-        bool isVIP
-    ) public view returns (uint256) {
+    function getSeatPrice(uint256 seatNumber, bool isVIP) public view returns (uint256) {
         if (isVIP && vipConfig.vipEnabled && vipMintPrice > 0) {
             return vipMintPrice;
         }
-        uint256 basePrice = seatPrices[seatNumber] > 0
-            ? seatPrices[seatNumber]
-            : baseMintPrice;
+        uint256 basePrice = seatPrices[seatNumber] > 0 ? seatPrices[seatNumber] : baseMintPrice;
         return basePrice;
     }
 
-    function setSeatPrices(
-        uint256[] calldata seatNumbers,
-        uint256[] calldata prices
-    ) external isAdmin {
+    function setSeatPrices(uint256[] calldata seatNumbers, uint256[] calldata prices) external isAdmin {
         require(seatNumbers.length == prices.length, "Arrays length mismatch");
         for (uint256 i = 0; i < seatNumbers.length; i++) {
             uint256 s = seatNumbers[i];
@@ -395,15 +366,8 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     function useTicket(uint256 tokenId) external tokenExists(tokenId) {
-        require(
-            msg.sender == eventOrganizer || msg.sender == owner(),
-            "Not authorized"
-        );
-        require(
-            block.timestamp >= eventStartTime &&
-                block.timestamp <= eventEndTime,
-            "Outside event time"
-        );
+        require(msg.sender == eventOrganizer || msg.sender == owner(), "Not authorized");
+        require(block.timestamp >= eventStartTime && block.timestamp <= eventEndTime, "Outside event time");
         if (ticketUsed[tokenId]) revert EventTicket__TicketAlreadyUsed();
 
         ticketUsed[tokenId] = true;
@@ -411,10 +375,12 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         emit TicketUsed(_ownerOf(tokenId), tokenId, block.timestamp);
     }
 
-    function calculateRefundPercentage(
-        address user,
-        uint256 tokenId
-    ) external view tokenExists(tokenId) returns (uint256) {
+    function calculateRefundPercentage(address user, uint256 tokenId)
+        external
+        view
+        tokenExists(tokenId)
+        returns (uint256)
+    {
         if (eventCancelled) return BASIS_POINTS; // 100%
         if (hasUsedMarketplace[tokenId]) return 0;
         if (tickets[tokenId].isUsed) return 0;
@@ -423,9 +389,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         TicketInfo memory ticket = tickets[tokenId];
 
         uint256 timeSinceMint = block.timestamp - ticket.mintedAt;
-        uint256 timeToEvent = eventStartTime > block.timestamp
-            ? eventStartTime - block.timestamp
-            : 0;
+        uint256 timeToEvent = eventStartTime > block.timestamp ? eventStartTime - block.timestamp : 0;
 
         if (timeSinceMint <= 1 hours) return BASIS_POINTS; // full refund within 1 hour
         if (block.timestamp >= eventStartTime) return 0; // no refund once event starts
@@ -437,28 +401,18 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         uint256 timeInRefundWindow = timeSinceMint - 1 hours;
         if (timeInRefundWindow >= refundWindow) return 0;
 
-        return
-            BASIS_POINTS - ((timeInRefundWindow * BASIS_POINTS) / refundWindow);
+        return BASIS_POINTS - ((timeInRefundWindow * BASIS_POINTS) / refundWindow);
     }
 
-    function refundTicket(
-        uint256 tokenId
-    ) external nonReentrant tokenExists(tokenId) onlyBeforeEvent {
+    function refundTicket(uint256 tokenId) external nonReentrant tokenExists(tokenId) onlyBeforeEvent {
         require(_ownerOf(tokenId) == msg.sender, "Not token owner");
-        require(
-            userRefundCount[msg.sender] < MAX_REFUNDS_PER_USER,
-            "Refund limit exceeded"
-        );
+        require(userRefundCount[msg.sender] < MAX_REFUNDS_PER_USER, "Refund limit exceeded");
 
-        uint256 refundPercentage = this.calculateRefundPercentage(
-            msg.sender,
-            tokenId
-        );
+        uint256 refundPercentage = this.calculateRefundPercentage(msg.sender, tokenId);
         if (refundPercentage == 0) revert EventTicket__NoRefundAvailable();
 
         TicketInfo memory ticket = tickets[tokenId];
-        uint256 refundAmount = (ticket.pricePaid * refundPercentage) /
-            BASIS_POINTS;
+        uint256 refundAmount = (ticket.pricePaid * refundPercentage) / BASIS_POINTS;
 
         // Update state
         userMintCount[msg.sender]++;
@@ -470,17 +424,14 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
         delete tickets[tokenId];
         _burn(tokenId);
 
-        (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
+        (bool success,) = payable(msg.sender).call{value: refundAmount}("");
         if (!success) revert EventTicket__RefundFailed();
 
         emit TicketRefunded(msg.sender, tokenId, refundAmount);
     }
 
     function markEventCompleted() external {
-        require(
-            msg.sender == eventOrganizer || msg.sender == owner(),
-            "Not authorized"
-        );
+        require(msg.sender == eventOrganizer || msg.sender == owner(), "Not authorized");
         require(block.timestamp >= eventEndTime, "Event not ended yet");
         require(!eventCancelled, "Event was cancelled");
         eventCompleted = true;
@@ -488,41 +439,26 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     function cancelEvent(string memory reason) external onlyBeforeEvent {
-        require(
-            msg.sender == eventOrganizer || msg.sender == owner(),
-            "Not authorized"
-        );
+        require(msg.sender == eventOrganizer || msg.sender == owner(), "Not authorized");
         eventCancelled = true;
         emit EventCancelled(block.timestamp, reason);
     }
 
-    function updateVIPConfig(
-        VIPConfig memory newConfig
-    ) external isAdmin onlyBeforeEvent {
+    function updateVIPConfig(VIPConfig memory newConfig) external isAdmin onlyBeforeEvent {
         if (newConfig.vipEnabled) {
             require(newConfig.vipSeatStart >= 1, "VIP start invalid");
-            require(
-                newConfig.vipSeatEnd >= newConfig.vipSeatStart,
-                "VIP range invalid"
-            );
+            require(newConfig.vipSeatEnd >= newConfig.vipSeatStart, "VIP range invalid");
             require(newConfig.vipSeatEnd <= seatCount, "VIP end beyond seats");
-            uint256 computed = newConfig.vipSeatEnd -
-                newConfig.vipSeatStart +
-                1;
+            uint256 computed = newConfig.vipSeatEnd - newConfig.vipSeatStart + 1;
             require(computed == newConfig.totalVIPSeats, "VIP total mismatch");
         } else {
-            require(
-                newConfig.totalVIPSeats == 0,
-                "VIP seats must be zero if disabled"
-            );
+            require(newConfig.totalVIPSeats == 0, "VIP seats must be zero if disabled");
         }
         vipConfig = newConfig;
         emit VIPConfigUpdated(newConfig);
     }
 
-    function updateVipMintPrice(
-        uint256 _newVipPrice
-    ) external isAdmin onlyBeforeEvent {
+    function updateVipMintPrice(uint256 _newVipPrice) external isAdmin onlyBeforeEvent {
         vipMintPrice = _newVipPrice;
         emit VIPPriceUpdated(_newVipPrice);
     }
@@ -545,24 +481,13 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     //////////////////////////////////////////////////////////////*/
     function _isVIPSeat(uint256 seatNumber) internal view returns (bool) {
         if (!vipConfig.vipEnabled) return false;
-        return
-            seatNumber >= vipConfig.vipSeatStart &&
-            seatNumber <= vipConfig.vipSeatEnd;
+        return seatNumber >= vipConfig.vipSeatStart && seatNumber <= vipConfig.vipSeatEnd;
     }
 
-    function _composeTokenURI(
-        bool isVIP,
-        uint256 seatNumber
-    ) internal view returns (string memory) {
+    function _composeTokenURI(bool isVIP, uint256 seatNumber) internal view returns (string memory) {
         // If you want a fixed URI (not seat-indexed), just return baseVipTokenURI or baseNonVipTokenURI
         // Here we append seat number for uniqueness: base + seatNumber
-        return
-            string(
-                abi.encodePacked(
-                    isVIP ? baseVipTokenURI : baseNonVipTokenURI,
-                    _toString(seatNumber)
-                )
-            );
+        return string(abi.encodePacked(isVIP ? baseVipTokenURI : baseNonVipTokenURI, _toString(seatNumber)));
     }
 
     function addMarketPlaceAddress(address _marketplace) external isAdmin {
@@ -570,18 +495,15 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     function _distributeFunds(uint256 amount) internal {
-        if (marketplaceAddress == address(0))
+        if (marketplaceAddress == address(0)) {
             revert EventTicket__ZeroAddressNotAllowed();
+        }
         // Forward the entire mint payment to the marketplace for deferred settlement
 
-        (bool success, ) = marketplaceAddress.call(
-            abi.encodeWithSignature(
-                "authorizeEventContract(address,bool)",
-                address(this),
-                true
-            )
+        (bool success,) = marketplaceAddress.call(
+            abi.encodeWithSignature("authorizeEventContract(address,bool)", address(this), true)
         );
-        (bool success2, ) = marketplaceAddress.call{value: amount}(
+        (bool success2,) = marketplaceAddress.call{value: amount}(
             abi.encodeWithSignature(
                 "registerPrimarySale(address,address,uint256)",
                 msg.sender, // minter
@@ -593,9 +515,8 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     function _isUserVerified(address user) internal view returns (bool) {
-        (bool success, bytes memory data) = I_USER_VERFIER_ADDRESS.staticcall(
-            abi.encodeWithSignature("isVerifiedAndActive(address)", user)
-        );
+        (bool success, bytes memory data) =
+            I_USER_VERFIER_ADDRESS.staticcall(abi.encodeWithSignature("isVerifiedAndActive(address)", user));
         if (success && data.length >= 32) {
             return abi.decode(data, (bool));
         }
@@ -613,11 +534,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     }
 
     // ERC721 hook to ensure transferability rules and marketplace usage tracking
-    function _update(
-        address to,
-        uint256 tokenId,
-        address auth
-    ) internal override(ERC721) returns (address) {
+    function _update(address to, uint256 tokenId, address auth) internal override(ERC721) returns (address) {
         address from = super._update(to, tokenId, auth);
         if (from != address(0) && to != address(0)) {
             require(tickets[tokenId].isTransferable, "Ticket not transferable");
@@ -649,9 +566,7 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
     /*//////////////////////////////////////////////////////////////
                                VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function getTicketInfo(
-        uint256 tokenId
-    ) external view tokenExists(tokenId) returns (TicketInfo memory) {
+    function getTicketInfo(uint256 tokenId) external view tokenExists(tokenId) returns (TicketInfo memory) {
         return tickets[tokenId];
     }
 
@@ -676,32 +591,17 @@ contract EventTicket is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
             bool completed
         )
     {
-        return (
-            eventStartTime,
-            eventEndTime,
-            venue,
-            eventDescription,
-            eventCancelled,
-            eventCompleted
-        );
+        return (eventStartTime, eventEndTime, venue, eventDescription, eventCancelled, eventCompleted);
     }
 
     // ERC2981 Royalty
-    function royaltyInfo(
-        uint256 tokenId,
-        uint256 salePrice
-    ) external view override returns (address, uint256) {
+    function royaltyInfo(uint256 tokenId, uint256 salePrice) external view override returns (address, uint256) {
         require(_ownerOf(tokenId) != address(0), "Token does not exist");
-        uint256 royaltyAmount = (salePrice * I_ROYALTY_FEE_PERCENTAGE) /
-            BASIS_POINTS;
+        uint256 royaltyAmount = (salePrice * I_ROYALTY_FEE_PERCENTAGE) / BASIS_POINTS;
         return (eventOrganizer, royaltyAmount);
     }
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view override(ERC721URIStorage, IERC165) returns (bool) {
-        return
-            interfaceId == type(IERC2981).interfaceId ||
-            super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721URIStorage, IERC165) returns (bool) {
+        return interfaceId == type(IERC2981).interfaceId || super.supportsInterface(interfaceId);
     }
 }

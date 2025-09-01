@@ -13,12 +13,8 @@ contract UserVerificationInteraction is Script {
         // This script checks the verification status of different users.
 
         // 1. Get the most recently deployed UserVerification contract.
-        UserVerification userVerification = UserVerification(
-            DevOpsTools.get_most_recent_deployment(
-                "UserVerification",
-                block.chainid
-            )
-        );
+        UserVerification userVerification =
+            UserVerification(DevOpsTools.get_most_recent_deployment("UserVerification", block.chainid));
         console.log("UserVerification contract address:", address(userVerification));
 
         // 2. Check the owner of the contract. The owner should be verified by the constructor.
@@ -35,12 +31,8 @@ contract UserVerificationInteraction is Script {
 
 contract VerifyUserInteraction is Script {
     function run() public {
-        UserVerification userVerification = UserVerification(
-            DevOpsTools.get_most_recent_deployment(
-                "UserVerification",
-                block.chainid
-            )
-        );
+        UserVerification userVerification =
+            UserVerification(DevOpsTools.get_most_recent_deployment("UserVerification", block.chainid));
 
         vm.startBroadcast();
         userVerification.verifyUser(0xa6253aC3Cf4CABa9Fb7B46CeF108E5eF97F3704f);
@@ -53,60 +45,50 @@ contract VerifyUserInteraction is Script {
 
 contract CreateEventInteraction is Script {
     function run() public {
-        EventFactory eventFactory = EventFactory(
-            DevOpsTools.get_most_recent_deployment(
-                "EventFactory",
-                block.chainid
-            )
-        );
+        EventFactory eventFactory = EventFactory(DevOpsTools.get_most_recent_deployment("EventFactory", block.chainid));
         uint256 creationFee = eventFactory.eventCreationFee();
         console.log("EventFactory Address:", address(eventFactory));
         console.log("Event Creation Fee:", creationFee);
 
         vm.startBroadcast();
-         eventFactory.createEvent{value: creationFee}(EventFactory.CreateEventParams({
-            name: "Coldplay",
-            symbol: "CP",
-            maxSupply: 10000,
-            baseMintPrice: 0.0001 ether,
-            organizerPercentage: 9500, // Corrected: 95% in basis points
-            royaltyFeePercentage: 200, // Corrected: 2% in basis points
-            eventStartTime: block.timestamp + 30 days,
-            eventEndTime: block.timestamp + 31 days,
-            maxMintsPerUser: 5,
-            vipConfig: EventFactory.VIPConfig({
-                totalVIPSeats: 1000,
-                vipSeatStart: 1, // Corrected: Must be >= 1
-                vipSeatEnd: 1000,
-                vipHoldingPeriod: 0,
-                vipEnabled: true
-            }),
-            vipMintPrice: 0.001 ether,
-            waitlistEnabled: false,
-            whitelistSaleDuration: 0,
-            initialWhitelist: new address[](0), // Corrected: Empty array syntax
-            venue: "Hyderabad",
-            eventDescription: "Coldplay Concert",
-            seatCount: 10000,
-            vipTokenURIBase: "https://ipfs.io/ipfs/bafkreiariqy4dml42gvqlxs6g673k7wtixhkawqajxbyuaz3evmlggvjfy", // Corrected: Encased in quotes
-            nonVipTokenURIBase: "https://ipfs.io/ipfs/bafkreiemi4ycoqlcys2davu44wsmevdqbnvhlxwd4wegys6e3uzfm4ra7i" // Corrected: Encased in quotes
-        }));
+        eventFactory.createEvent{value: creationFee}(
+            EventFactory.CreateEventParams({
+                name: "Coldplay",
+                symbol: "CP",
+                maxSupply: 10000,
+                baseMintPrice: 0.0001 ether,
+                organizerPercentage: 9500, // Corrected: 95% in basis points
+                royaltyFeePercentage: 200, // Corrected: 2% in basis points
+                eventStartTime: block.timestamp + 30 days,
+                eventEndTime: block.timestamp + 31 days,
+                maxMintsPerUser: 5,
+                vipConfig: EventFactory.VIPConfig({
+                    totalVIPSeats: 1000,
+                    vipSeatStart: 1, // Corrected: Must be >= 1
+                    vipSeatEnd: 1000,
+                    vipHoldingPeriod: 0,
+                    vipEnabled: true
+                }),
+                vipMintPrice: 0.001 ether,
+                waitlistEnabled: false,
+                whitelistSaleDuration: 0,
+                initialWhitelist: new address[](0), // Corrected: Empty array syntax
+                venue: "Hyderabad",
+                eventDescription: "Coldplay Concert",
+                seatCount: 10000,
+                vipTokenURIBase: "https://ipfs.io/ipfs/bafkreiariqy4dml42gvqlxs6g673k7wtixhkawqajxbyuaz3evmlggvjfy", // Corrected: Encased in quotes
+                nonVipTokenURIBase: "https://ipfs.io/ipfs/bafkreiemi4ycoqlcys2davu44wsmevdqbnvhlxwd4wegys6e3uzfm4ra7i" // Corrected: Encased in quotes
+            })
+        );
         vm.stopBroadcast();
-
-
     }
 }
 
 contract MintInteractions is Script {
     function run() public {
-        EventFactory eventFactory = EventFactory(
-            DevOpsTools.get_most_recent_deployment(
-                "EventFactory",
-                block.chainid
-            )
-        );
+        EventFactory eventFactory = EventFactory(DevOpsTools.get_most_recent_deployment("EventFactory", block.chainid));
 
-        EventTicket eventTicket =EventTicket(eventFactory.getAllDeployedEvents()[2]);
+        EventTicket eventTicket = EventTicket(eventFactory.getAllDeployedEvents()[2]);
         console.log("EventTicket Address:", address(eventTicket));
         vm.startBroadcast();
         eventTicket.mintTicket{value: 0.0001 ether}("Coldplay Concert", 1002);

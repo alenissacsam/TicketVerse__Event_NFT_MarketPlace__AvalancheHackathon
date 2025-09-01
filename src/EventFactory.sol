@@ -42,10 +42,7 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    event EventCreated(
-        address indexed organizer,
-        address indexed eventContract
-    );
+    event EventCreated(address indexed organizer, address indexed eventContract);
     event OrganizerAuthorized(address indexed organizer, bool authorized);
     event ConfigUpdated(bytes32 key, uint256 value);
 
@@ -62,13 +59,8 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-    constructor(
-        address _platformAddress,
-        address _userVerifierAddress
-    ) Ownable(msg.sender) {
-        if (
-            _platformAddress == address(0) || _userVerifierAddress == address(0)
-        ) revert ZeroAddress();
+    constructor(address _platformAddress, address _userVerifierAddress) Ownable(msg.sender) {
+        if (_platformAddress == address(0) || _userVerifierAddress == address(0)) revert ZeroAddress();
         I_PLATFORM_ADDRESS = _platformAddress;
         I_USER_VERFIER_ADDRESS = _userVerifierAddress;
 
@@ -116,15 +108,16 @@ contract EventFactory is Ownable {
         _marketplaceAddress = _marketplace;
     }
 
-    function createEvent(
-        CreateEventParams calldata p
-    ) external payable onlyAuthorizedOrganizer returns (address deployed) {
+    function createEvent(CreateEventParams calldata p)
+        external
+        payable
+        onlyAuthorizedOrganizer
+        returns (address deployed)
+    {
         if (msg.value < eventCreationFee) revert InsufficientCreationFee();
 
         // Delegate detailed validation to EventTicket constructor to save factory bytecode.
-        uint256 mintsPerUser = p.maxMintsPerUser > 0
-            ? p.maxMintsPerUser
-            : defaultMaxMintsPerUser;
+        uint256 mintsPerUser = p.maxMintsPerUser > 0 ? p.maxMintsPerUser : defaultMaxMintsPerUser;
 
         // Deploy the event ticket contract
         // Note: Keep the constructor signature aligned with your EventTicket implementation.
@@ -179,10 +172,7 @@ contract EventFactory is Ownable {
     /*//////////////////////////////////////////////////////////////
                            AUTHORIZATION
     //////////////////////////////////////////////////////////////*/
-    function setOrganizerAuthorization(
-        address organizer,
-        bool authorized
-    ) external isAdmin {
+    function setOrganizerAuthorization(address organizer, bool authorized) external isAdmin {
         authorizedOrganizers[organizer] = authorized;
         emit OrganizerAuthorized(organizer, authorized);
     }
@@ -194,9 +184,7 @@ contract EventFactory is Ownable {
         return _deployedEvents;
     }
 
-    function getAllOrganizerEvents(
-        address organizer
-    ) external view returns (address[] memory) {
+    function getAllOrganizerEvents(address organizer) external view returns (address[] memory) {
         return _organizerEvents[organizer];
     }
 
@@ -204,9 +192,7 @@ contract EventFactory is Ownable {
         return _deployedEvents.length;
     }
 
-    function getOrganizerEventCount(
-        address organizer
-    ) external view returns (uint256) {
+    function getOrganizerEventCount(address organizer) external view returns (uint256) {
         return _organizerEvents[organizer].length;
     }
 
@@ -226,15 +212,17 @@ contract EventFactory is Ownable {
     }
 
     function updateDefaultLimits(uint256 _maxMintsPerUser) external isAdmin {
-        if (!(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100))
+        if (!(_maxMintsPerUser > 0 && _maxMintsPerUser <= 100)) {
             revert InvalidLimit();
+        }
         defaultMaxMintsPerUser = _maxMintsPerUser;
         emit ConfigUpdated("defaultMaxMintsPerUser", _maxMintsPerUser);
     }
 
     function updateMinEventSetupTime(uint256 _minTime) external isAdmin {
-        if (!(_minTime >= 1 hours && _minTime <= 30 days))
+        if (!(_minTime >= 1 hours && _minTime <= 30 days)) {
             revert InvalidSetupTime();
+        }
         minEventSetupTime = _minTime;
         emit ConfigUpdated("minEventSetupTime", _minTime);
     }
@@ -246,13 +234,13 @@ contract EventFactory is Ownable {
         uint256 platformFee = (amount * platformCreationFeePercentage) / 10000;
         uint256 remainder = amount - platformFee;
         if (platformFee > 0) {
-            (bool success, ) = I_PLATFORM_ADDRESS.call{value: platformFee}("");
+            (bool success,) = I_PLATFORM_ADDRESS.call{value: platformFee}("");
             // Using a more specific error than DeploymentFailed would be ideal,
             // but this prevents the transaction from silently failing.
             if (!success) revert DeploymentFailed();
         }
         if (remainder > 0) {
-            (bool success, ) = owner().call{value: remainder}("");
+            (bool success,) = owner().call{value: remainder}("");
             if (!success) revert DeploymentFailed();
         }
     }

@@ -10,7 +10,6 @@ import {Script} from "forge-std/Script.sol";
  * @author alenissacsam
  * @dev A script to deploy the UserVerification contract.
  */
-
 contract DeployUserVerification is Script {
     function run() external returns (address) {
         vm.startBroadcast();

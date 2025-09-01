@@ -17,26 +17,15 @@ contract DeployAll is Script {
         address userVerification = deployUserVerification.run();
 
         DeployEventFactory deployEventFactory = new DeployEventFactory();
-        address eventFactory = deployEventFactory.run(
-            platformAddress,
-            userVerification
-        );
+        address eventFactory = deployEventFactory.run(platformAddress, userVerification);
 
         DeployTicketMarketPlace deployTicketMarketPlace = new DeployTicketMarketPlace();
-        address ticketMarketplace = deployTicketMarketPlace.run(
-            platformAddress,
-            _platformFeePercent,
-            userVerification
-        );
+        address ticketMarketplace = deployTicketMarketPlace.run(platformAddress, _platformFeePercent, userVerification);
 
         vm.startBroadcast();
         EventFactory(eventFactory).addMarketplaceAddress(ticketMarketplace);
         vm.stopBroadcast();
 
-        return (
-            address(userVerification),
-            eventFactory,
-            address(ticketMarketplace)
-        );
+        return (address(userVerification), eventFactory, address(ticketMarketplace));
     }
 }
